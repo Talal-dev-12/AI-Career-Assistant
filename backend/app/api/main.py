@@ -420,10 +420,10 @@ def answer_interview(session_id: str, body: UnifiedInterviewAnswer, db: Session 
     # 2. Check if it's a MABD Interview session
     mabd_session = db.get(MABDInterviewSession, session_id)
     if mabd_session:
-        from mabd.services.interview_service import submit_interview_response
-        if body.question_index is None:
-            raise HTTPException(400, "question_index is required for MABD interview sessions")
-        return submit_interview_response(db, session_id, body.question_index, body.answer)
+        raise HTTPException(
+            status_code=400,
+            detail="Django/MABD interview sessions are handled by the Django server running on port 8002."
+        )
 
     raise HTTPException(404, "session not found")
 

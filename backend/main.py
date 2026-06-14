@@ -7,8 +7,7 @@ from sqlalchemy import select
 from app.db.database import init_db, get_session
 from app.db.models import Job
 from app.api.main import app as talha_app
-from mabd.routes.skill_gap import router as skill_gap_router
-from mabd.routes.interview import router as mabd_interview_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -86,10 +85,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routes from both codebases
+# Include routes from core codebase
 app.include_router(talha_app.router)
-app.include_router(skill_gap_router)
-app.include_router(mabd_interview_router)
+
 
 @app.get("/")
 def home():
