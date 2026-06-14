@@ -1,0 +1,371 @@
+import json
+import logging
+from typing import List, Dict, Any
+from datetime import datetime
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from app.config import get_settings
+from app.db.models import User, Job, UserSkill, SkillGapAnalysis, MABDInterviewSession
+
+logger = logging.getLogger(__name__)
+
+# ================= LLM Clients Initialization =================
+
+def get_gemini_client():
+    settings = get_settings()
+    if not settings.gemini_api_key or "your_gemini" in settings.gemini_api_key:
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=settings.gemini_api_key)
+    except Exception as e:
+        logger.error(f"Failed to configure Gemini Client: {e}")
+        return None
+
+def get_openai_client():
+    settings = get_settings()
+    if not settings.openai_api_key or "your_openai" in settings.openai_api_key:
+        return None
+    try:
+        from openai import OpenAI
+        return OpenAI(api_key=settings.openai_api_key)
+    except Exception as e:
+        logger.error(f"Failed to configure OpenAI: {e}")
+        return None
+
+def call_llm(prompt: str, json_response: bool = True) -> str:
+    """Helper to dispatch LLM calls to either Gemini or OpenAI, or fallback to mock."""
+    settings = get_settings()
+    # Check if we should use gemini
+    gemini_client = get_gemini_client()
+    if gemini_client:
+        try:
+            config = {"response_mime_type": "application/json"} if json_response else None
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=config
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"Gemini call failed, checking fallback: {e}")
+
+    # Try OpenAI
+    openai_client = get_openai_client()
+    if openai_client:
+        try:
+            model = "gpt-4o-mini"
+            messages = [{"role": "user", "content": prompt}]
+            response_format = {"type": "json_object"} if json_response else None
+            response = openai_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format=response_format
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenAI call failed: {e}")
+
+    # Fallback/Mock return
+    logger.warning("No working LLM provider API keys configured. Using Mock fallback.")
+    return ""
+
+
+# ================= LLM Prompt Wrappers =================
+
+def run_llm_skill_gap(user_skills: List[Dict[str, Any]], job_title: str, job_description: str) -> Dict[str, Any]:
+    skills_str = ", ".join([f"{s['skill_name']} ({s['proficiency_level']})" for s in user_skills])
+    
+    prompt = f"""
+    You are an expert AI Career Coach. 
+    Analyze the gap between a candidate's skills and the requirements of a specific job.
+    
+    Candidate Skills: {skills_str}
+    Job Title: {job_title}
+    Job Description: {job_description}
+    
+    You must output a JSON object with the following structure:
+    {{
+        "missing_skills": [
+            {{"skill_name": "Skill Name", "priority": "High/Medium/Low"}}
+        ],
+        "proficiency_gap": [
+            {{"skill_name": "Skill Name", "user_level": "User Level", "required_level": "Required Level", "description": "What they need to learn"}}
+        ],
+        "learning_roadmap": [
+            {{
+                "phase": "Phase 1: Foundations",
+                "skills": ["Skill 1", "Skill 2"],
+                "duration": "2 weeks",
+                "resources": [
+                    {{"name": "Course Title or Doc Name", "type": "Course/Book/Documentation", "url": "https://example.com/learn"}}
+                ]
+            }}
+        ],
+        "salary_projection": 15.5
+    }}
+    Note: salary_projection should be an estimated percentage increase (float) in the user's market value if they acquire these missing skills.
+    
+    Provide ONLY the raw JSON string. Do not wrap in markdown blocks.
+    """
+    
+    raw_response = call_llm(prompt, json_response=True)
+    if raw_response:
+        try:
+            return json.loads(raw_response)
+        except Exception as e:
+            logger.error(f"Failed to parse LLM JSON response: {e}. Raw: {raw_response}")
+            
+    # Mock fallback
+    return {
+        "missing_skills": [
+            {"skill_name": "Docker & Kubernetes", "priority": "High"},
+            {"skill_name": "CI/CD Pipelines (GitHub Actions)", "priority": "High"},
+            {"skill_name": "System Design", "priority": "Medium"}
+        ],
+        "proficiency_gap": [
+            {"skill_name": "System Design", "user_level": "None", "required_level": "Intermediate", "description": "Needs basic microservices design and API gateway patterns."},
+            {"skill_name": "Docker", "user_level": "Beginner", "required_level": "Intermediate", "description": "Familiar with writing basic Dockerfiles, but needs multi-stage builds and compose configurations."}
+        ],
+        "learning_roadmap": [
+            {
+                "phase": "Phase 1: Containerization Fundamentals",
+                "skills": ["Docker", "Docker Compose"],
+                "duration": "2 weeks",
+                "resources": [
+                    {"name": "Docker for Beginners (Docker Docs)", "type": "Documentation", "url": "https://docs.docker.com/get-started/"},
+                    {"name": "Docker Crash Course (YouTube)", "type": "Course", "url": "https://www.youtube.com/results?search_query=docker+crash+course"}
+                ]
+            },
+            {
+                "phase": "Phase 2: CI/CD & Deployment",
+                "skills": ["GitHub Actions", "Kubernetes Basics"],
+                "duration": "3 weeks",
+                "resources": [
+                    {"name": "GitHub Actions Learning Path", "type": "Documentation", "url": "https://docs.github.com/en/actions"}
+                ]
+            }
+        ],
+        "salary_projection": 20.0
+    }
+
+def run_llm_interview_questions(job_title: str, job_description: str) -> List[str]:
+    prompt = f"""
+    You are an expert technical interviewer.
+    Generate exactly 5 interview questions for the job role '{job_title}' based on the job description below.
+    The questions should be a mix of technical (core skills), behavioral (scenario-based), and HR fit.
+    
+    Job Description: {job_description}
+    
+    You must output a JSON object containing a list of strings:
+    {{
+        "questions": [
+            "Question 1",
+            "Question 2",
+            "Question 3",
+            "Question 4",
+            "Question 5"
+        ]
+    }}
+    Provide ONLY the raw JSON string. Do not wrap in markdown blocks.
+    """
+    
+    raw_response = call_llm(prompt, json_response=True)
+    if raw_response:
+        try:
+            parsed = json.loads(raw_response)
+            if "questions" in parsed:
+                return parsed["questions"][:5]
+        except Exception as e:
+            logger.error(f"Failed to parse interview questions response: {e}. Raw: {raw_response}")
+            
+    # Mock fallback
+    return [
+        "How do you design a highly scalable microservice using FastAPI?",
+        "Can you explain your experience with containerization, particularly Docker multi-stage builds?",
+        "How do you troubleshoot a performance bottleneck in a database query?",
+        "Describe a time when you had to learn a complex new technology quickly. What was your process?",
+        "What are the benefits of using a caching layer like Redis in a backend application?"
+    ]
+
+def run_llm_interview_evaluation(questions: List[str], responses: List[str]) -> Dict[str, Any]:
+    qa_list = []
+    for i, q in enumerate(questions):
+        ans = responses[i] if i < len(responses) else "No response provided."
+        qa_list.append({"question": q, "answer": ans})
+        
+    qa_str = json.dumps(qa_list, indent=2)
+    
+    prompt = f"""
+    You are an expert interviewer evaluating a candidate's mock interview responses.
+    Evaluate the following list of questions and the candidate's answers:
+    
+    Transcript:
+    {qa_str}
+    
+    For each answer, calculate a score (0 to 100) and provide details on strengths, weaknesses, and suggestions for improvement.
+    Also generate an overall feedback summary and an overall average score.
+    
+    You must output a JSON object with this structure:
+    {{
+        "questions_feedback": [
+            {{
+                "question": "Question text",
+                "response": "Answer text",
+                "score": 85,
+                "strengths": "Strengths detail",
+                "weaknesses": "Weaknesses detail",
+                "improvement_suggestions": "Suggestions detail"
+            }}
+        ],
+        "overall_feedback": "Overall summary of the candidate's performance",
+        "overall_score": 75
+    }}
+    Provide ONLY the raw JSON string. Do not wrap in markdown blocks.
+    """
+    
+    raw_response = call_llm(prompt, json_response=True)
+    if raw_response:
+        try:
+            return json.loads(raw_response)
+        except Exception as e:
+            logger.error(f"Failed to parse evaluation response: {e}. Raw: {raw_response}")
+            
+    # Mock fallback
+    feedback_list = []
+    overall_sum = 0
+    for qa in qa_list:
+        ans_len = len(qa['answer'])
+        score = 80 if ans_len > 25 else (40 if ans_len < 10 else 60)
+        overall_sum += score
+        feedback_list.append({
+            "question": qa["question"],
+            "response": qa["answer"],
+            "score": score,
+            "strengths": "The response was direct and clear." if score >= 60 else "Attempted to answer.",
+            "weaknesses": "Could benefit from more technical depth and concrete examples." if score < 80 else "Minor structural improvements needed.",
+            "improvement_suggestions": "Try using the STAR method (Situation, Task, Action, Result) to structure behavioral answers."
+        })
+        
+    return {
+        "questions_feedback": feedback_list,
+        "overall_feedback": "The candidate demonstrates solid fundamental knowledge but needs to provide more specific examples and elaborate more deeply on system design patterns.",
+        "overall_score": int(overall_sum / len(questions)) if questions else 0
+    }
+
+
+# ================= Business Logic Functions =================
+
+def analyze_skill_gap(db: Session, user_id: str, job_id: str) -> SkillGapAnalysis:
+    user = db.get(User, user_id)
+    if not user:
+        raise LookupError(f"User not found with ID {user_id}")
+    job = db.get(Job, job_id)
+    if not job:
+        raise LookupError(f"Job not found with ID {job_id}")
+
+    # Fetch user skills
+    skills_stmt = select(UserSkill).where(UserSkill.user_id == user_id)
+    user_skills = db.execute(skills_stmt).scalars().all()
+    
+    skills_data = [
+        {
+            "skill_name": skill.skill_name,
+            "proficiency_level": skill.proficiency_level,
+            "years_experience": skill.years_experience
+        }
+        for skill in user_skills
+    ]
+    
+    analysis_result = run_llm_skill_gap(
+        user_skills=skills_data,
+        job_title=job.title,
+        job_description=job.description
+    )
+    
+    db_analysis = SkillGapAnalysis(
+        user_id=user.id,
+        job_id=job.id,
+        missing_skills=analysis_result.get("missing_skills", []),
+        proficiency_gap=analysis_result.get("proficiency_gap", []),
+        learning_roadmap=analysis_result.get("learning_roadmap", []),
+        salary_projection=analysis_result.get("salary_projection", 0.0)
+    )
+    db.add(db_analysis)
+    db.commit()
+    db.refresh(db_analysis)
+    
+    return db_analysis
+
+
+def start_interview_session(db: Session, user_id: str, job_id: str) -> MABDInterviewSession:
+    user = db.get(User, user_id)
+    if not user:
+        raise LookupError(f"User not found with ID {user_id}")
+    job = db.get(Job, job_id)
+    if not job:
+        raise LookupError(f"Job not found with ID {job_id}")
+
+    questions = run_llm_interview_questions(job.title, job.description)
+    
+    db_session = MABDInterviewSession(
+        user_id=user.id,
+        job_id=job.id,
+        question_set=questions,
+        responses=[""] * len(questions),
+        feedback={},
+        score=None,
+        status="started"
+    )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    
+    return db_session
+
+
+def submit_interview_response(db: Session, session_id: str, question_index: int, answer: str) -> MABDInterviewSession:
+    db_session = db.get(MABDInterviewSession, session_id)
+    if not db_session:
+        raise LookupError(f"Interview session not found with ID {session_id}")
+        
+    if db_session.status != "started":
+        raise ValueError("Cannot submit responses to a completed or evaluated session")
+
+    if question_index < 0 or question_index >= len(db_session.question_set):
+        raise ValueError(f"Invalid question index {question_index}. Session contains {len(db_session.question_set)} questions.")
+
+    updated_responses = list(db_session.responses)
+    while len(updated_responses) < len(db_session.question_set):
+        updated_responses.append("")
+    updated_responses[question_index] = answer
+    
+    db_session.responses = updated_responses
+    db_session.save_context_change = True  # simple flag to force update or just commit
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    
+    return db_session
+
+
+def evaluate_interview_session(db: Session, session_id: str) -> MABDInterviewSession:
+    db_session = db.get(MABDInterviewSession, session_id)
+    if not db_session:
+        raise LookupError(f"Interview session not found with ID {session_id}")
+    
+    evaluation_result = run_llm_interview_evaluation(
+        questions=db_session.question_set,
+        responses=db_session.responses
+    )
+    
+    db_session.feedback = evaluation_result
+    db_session.score = evaluation_result.get("overall_score", 0)
+    db_session.status = "evaluated"
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    
+    return db_session

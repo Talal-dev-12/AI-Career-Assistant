@@ -1,25 +1,122 @@
-"""
-Pydantic v2 schemas — request validation, response serialization, and inter-service contracts.
+"""Structured outputs for every pipeline stage and inter-service contracts.
 
-Rules:
-  - Request schemas validate and sanitize all incoming data.
-  - Response schemas control exactly what is exposed to callers.
-  - Enums define all valid values for controlled fields.
-  - No ORM objects are returned directly from services — always converted to schema.
+Every agent receives/returns one of these models (passed as ``output_type``
+to the OpenAI Agents SDK) so inter-agent communication never relies on
+free-text parsing.
+
+Pydantic v2 schemas — request validation, response serialization, and inter-service contracts.
 """
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, UTC
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator, model_validator
 
 
-# ── Enums ──────────────────────────────────────────────────────────────────────
+# ── Job / Profile / Matching Schemas ──────────────────────────────────────────
 
-class ApplicationStatus(StrEnum):
+class JobSource(str, Enum):
+    GREENHOUSE = "greenhouse"
+    LEVER = "lever"
+    AGGREGATOR = "aggregator"
+
+
+class JobListing(BaseModel):
+    external_id: str
+    source: JobSource
+    title: str
+    company: str
+    location: str | None = None
+    url: str
+    description: str = ""
+    posted_at: datetime | None = None
+
+
+class VerifiedJob(BaseModel):
+    """Output of the Job Verification Agent."""
+
+    job: JobListing
+    verified_status: bool
+    duplicate: bool = False
+    expired: bool = False
+    suspicious: bool = False
+    reasons: list[str] = Field(default_factory=list)
+
+
+class ExperienceEntry(BaseModel):
+    title: str
+    company: str
+    start: str | None = None
+    end: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+
+
+class EducationEntry(BaseModel):
+    degree: str
+    institution: str
+    year: str | None = None
+
+
+class UserProfile(BaseModel):
+    """Canonical parsed-CV profile. Source of truth for the factual checker."""
+
+    user_id: str
+    full_name: str
+    email: EmailStr
+    skills: list[str] = Field(default_factory=list)
+    experience: list[ExperienceEntry] = Field(default_factory=list)
+    education: list[EducationEntry] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+    target_roles: list[str] = Field(default_factory=list)
+    profile_version: int = 1
+
+
+class MatchScore(BaseModel):
+    """Output of the Job Matching Agent."""
+
+    job_external_id: str
+    user_id: str
+    score: float = Field(ge=0, le=100)
+    skill_overlap: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    rationale: str = ""
+
+
+class ResumeDiff(BaseModel):
+    """Output of the Resume Optimization Agent.
+
+    ``source_claims`` lists every factual claim used, each of which must be
+    entailed by the UserProfile (enforced by the factual-accuracy guardrail).
+    """
+
+    job_external_id: str
+    resume_markdown: str
+    highlighted_skills: list[str] = Field(default_factory=list)
+    source_claims: list[str] = Field(default_factory=list)
+
+
+class CoverLetter(BaseModel):
+    job_external_id: str
+    body_markdown: str
+    source_claims: list[str] = Field(default_factory=list)
+
+
+# ── Application Status and Transitions ────────────────────────────────────────
+
+class ApplicationStatus(str, Enum):
+    # From HEAD
+    DRAFT = "draft"
+    AWAITING_USER_APPROVAL = "awaiting_user_approval"
+    APPROVED = "approved"
+    SUBMITTED = "submitted"
+    REJECTED_BY_USER = "rejected_by_user"
+    OFFER = "offer"
+    REJECTED_BY_COMPANY = "rejected_by_company"
+    
+    # From hammad
     QUEUED             = "queued"
     PROCESSING         = "processing"
     APPLIED            = "applied"
@@ -30,7 +127,6 @@ class ApplicationStatus(StrEnum):
     LIMIT_EXCEEDED     = "limit_exceeded"
     EXPIRED            = "expired"
     ASSET_ERROR        = "asset_error"
-    # Post-application statuses (set manually by user)
     REJECTED           = "rejected"
     INTERVIEW          = "interview"
     ACCEPTED           = "accepted"
@@ -41,7 +137,7 @@ class ApplicationStatus(StrEnum):
     EMAIL_FAILED       = "email_failed"
 
 
-class ApplicationMethod(StrEnum):
+class ApplicationMethod(str, Enum):
     EMAIL              = "email"
     WEB_FORM           = "web_form"
     LINKEDIN_EASY_APPLY = "linkedin_easy_apply"
@@ -49,13 +145,11 @@ class ApplicationMethod(StrEnum):
     MANUAL             = "manual"
 
 
-class ApplicationPriority(StrEnum):
+class ApplicationPriority(str, Enum):
     LOW    = "low"
     NORMAL = "normal"
     HIGH   = "high"
 
-
-# ── Valid status transitions ────────────────────────────────────────────────────
 
 VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.QUEUED: {
@@ -117,10 +211,68 @@ VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.ACCEPTED: set(),
     ApplicationStatus.INTERVIEW: {ApplicationStatus.ACCEPTED, ApplicationStatus.REJECTED},
     ApplicationStatus.ASSET_ERROR: {ApplicationStatus.QUEUED},
+    
+    # Additional status transitions
+    ApplicationStatus.DRAFT: {
+        ApplicationStatus.AWAITING_USER_APPROVAL,
+        ApplicationStatus.QUEUED,
+        ApplicationStatus.FAILED,
+    },
+    ApplicationStatus.AWAITING_USER_APPROVAL: {
+        ApplicationStatus.APPROVED,
+        ApplicationStatus.REJECTED_BY_USER,
+    },
+    ApplicationStatus.APPROVED: {
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.FAILED,
+        ApplicationStatus.QUEUED,
+    },
+    ApplicationStatus.SUBMITTED: {
+        ApplicationStatus.OFFER,
+        ApplicationStatus.REJECTED_BY_COMPANY,
+        ApplicationStatus.INTERVIEW,
+        ApplicationStatus.FAILED,
+    },
+    ApplicationStatus.REJECTED_BY_USER: set(),
+    ApplicationStatus.OFFER: set(),
+    ApplicationStatus.REJECTED_BY_COMPANY: set(),
 }
 
 
-# ── Request schemas ────────────────────────────────────────────────────────────
+class ApplicationRecord(BaseModel):
+    application_id: str
+    user_id: str
+    job_external_id: str
+    status: ApplicationStatus = ApplicationStatus.DRAFT
+    resume_markdown: str | None = None
+    cover_letter_markdown: str | None = None
+    submitted_at: datetime | None = None
+    confirmation_ref: str | None = None
+
+
+# ── Interview / Learning Schemas ──────────────────────────────────────────────
+
+class InterviewFeedback(BaseModel):
+    question: str
+    answer_summary: str
+    score: float = Field(ge=0, le=10)
+    feedback: str
+
+
+class LearningRoadmapItem(BaseModel):
+    skill: str
+    priority: int = Field(ge=1, le=5)
+    resources: list[str] = Field(default_factory=list)
+    estimated_weeks: int = 1
+
+
+class LearningRoadmap(BaseModel):
+    user_id: str
+    target_role: str
+    items: list[LearningRoadmapItem] = Field(default_factory=list)
+
+
+# ── Automation Request/Response Schemas ───────────────────────────────────────
 
 class JobMetadata(BaseModel):
     company_name: str = Field(..., min_length=1, max_length=255)
@@ -193,8 +345,6 @@ class StatusUpdateRequest(BaseModel):
     reason: str | None = Field(None, max_length=500)
     changed_by: str = "user"
 
-
-# ── Response schemas ────────────────────────────────────────────────────────────
 
 class ApplicationResponse(BaseModel):
     """Full application record returned by status and submit endpoints."""
@@ -411,4 +561,3 @@ class TokenResponse(BaseModel):
     requires_mfa: bool = False
     mfa_token: str | None = None
     user_id: uuid.UUID | None = None
-

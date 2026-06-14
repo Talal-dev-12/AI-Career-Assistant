@@ -1,18 +1,106 @@
-# docker-compose.yml — Production / Staging configuration
-#
-# Key design decisions:
-#   - No bind mounts: container code is ONLY what was baked into the image.
-#     Use docker-compose.override.yml for local development with live reload.
-#   - `migrate` runs once on startup (restart: "no"), then the api/worker
-#     services wait for it to complete successfully before starting.
-#   - All services depend on health-checked postgres and redis.
-#   - Named volumes for persistent data; no anonymous volumes.
-#   - PYTHONUNBUFFERED=1 on all services to ensure logs are flushed immediately
-#     to Docker's log driver (critical for observability in production).
+# Combined docker-compose.yml for Core Pipeline and Application Automation Backend
 
 services:
 
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  # ── Core Pipeline Services (from Talal-2) ───────────────────────────────────
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-verify:
+    build: .
+    command: python -m app.pipeline.workers verify
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-docgen:
+    build: .
+    command: python -m app.pipeline.workers docgen
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-submit:
+    build: .
+    command: python -m app.pipeline.workers submit
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  tracker:
+    build: .
+    command: python -m app.pipeline.tracking
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  scheduler:
+    build: .
+    command: python -m app.pipeline.scheduler
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: career
+      POSTGRES_DB: career
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career"]
+      interval: 5s
+      retries: 10
+
+
+  # ── Application Automation Services (from hammad) ───────────────────────────
   postgres:
     image: postgres:16.3-alpine
     container_name: automation_postgres
@@ -32,7 +120,6 @@ services:
       retries: 5
       start_period: 15s
 
-  # ── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7.2-alpine
     container_name: automation_redis
@@ -54,12 +141,7 @@ services:
       retries: 5
       start_period: 5s
 
-  # ── Database migration + RBAC seed (one-shot) ───────────────────────────────
-  # Runs Alembic migrations then seeds fixed RBAC roles/permissions.
-  # Both operations are idempotent — safe to re-run on every deploy.
-  # api and worker wait for this service to complete successfully (exit 0)
-  # before starting, eliminating the "migrations not run yet" race condition.
-  migrate:
+  automation-migrate:
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -84,8 +166,7 @@ services:
         echo '==> Migration and seed complete.'
       "
 
-  # ── FastAPI Application Server ──────────────────────────────────────────────
-  api:
+  automation-api:
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -107,7 +188,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
+      automation-migrate:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
@@ -116,8 +197,7 @@ services:
       retries: 3
       start_period: 20s
 
-  # ── Celery Worker (application task execution) ──────────────────────────────
-  worker:
+  automation-worker:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
@@ -132,7 +212,6 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-      # Chrome headless settings (consumed by BaseIntegrationAdapter)
       CHROME_NO_SANDBOX: "1"
       CHROME_HEADLESS: "1"
       WDM_LOG_LEVEL: "0"
@@ -141,7 +220,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
+      automation-migrate:
         condition: service_completed_successfully
     command: >
       celery -A app.tasks.celery_app.celery_app worker
@@ -157,8 +236,7 @@ services:
       retries: 3
       start_period: 30s
 
-  # ── Celery Beat Scheduler ───────────────────────────────────────────────────
-  beat:
+  automation-beat:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
@@ -177,7 +255,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      migrate:
+      automation-migrate:
         condition: service_completed_successfully
     command: >
       celery -A app.tasks.celery_app.celery_app beat
@@ -185,8 +263,7 @@ services:
       --scheduler celery.beat:PersistentScheduler
       --pidfile=/tmp/celerybeat.pid
 
-  # ── Flower (Celery monitoring UI) ───────────────────────────────────────────
-  flower:
+  automation-flower:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
@@ -213,8 +290,8 @@ services:
       retries: 3
       start_period: 15s
 
-# ── Named volumes ────────────────────────────────────────────────────────────
 volumes:
+  pgdata:
   postgres_data:
     driver: local
   redis_data:
