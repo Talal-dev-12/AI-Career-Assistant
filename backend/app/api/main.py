@@ -420,10 +420,27 @@ def answer_interview(session_id: str, body: UnifiedInterviewAnswer, db: Session 
     # 2. Check if it's a MABD Interview session
     mabd_session = db.get(MABDInterviewSession, session_id)
     if mabd_session:
-        raise HTTPException(
-            status_code=400,
-            detail="Django/MABD interview sessions are handled by the Django server running on port 8002."
-        )
+        from app.services.mabd_services import submit_interview_response as mabd_submit_answer
+        if body.question_index is None:
+            raise HTTPException(400, "question_index is required for MABD interview sessions")
+        try:
+            session = mabd_submit_answer(db, session_id, body.question_index, body.answer)
+            return {
+                "id": session.id,
+                "user_id": session.user_id,
+                "job_id": session.job_id,
+                "question_set": session.question_set,
+                "responses": session.responses,
+                "feedback": session.feedback,
+                "score": session.score,
+                "status": session.status,
+                "created_at": session.created_at,
+                "type": "mabd"
+            }
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except LookupError as exc:
+            raise HTTPException(404, str(exc))
 
     raise HTTPException(404, "session not found")
 
@@ -471,6 +488,106 @@ def interview_transcript(session_id: str, db: Session = Depends(get_session)):
         }
 
     raise HTTPException(404, "session not found")
+
+
+class MabdInterviewStartRequest(BaseModel):
+    user_id: str
+    job_id: str
+
+
+@app.post("/interview/start", status_code=201)
+def mabd_start_interview(body: MabdInterviewStartRequest, db: Session = Depends(get_session)):
+    from app.services.mabd_services import start_interview_session as mabd_start_session
+    try:
+        session = mabd_start_session(db, body.user_id, body.job_id)
+        return {
+            "id": session.id,
+            "user_id": session.user_id,
+            "job_id": session.job_id,
+            "question_set": session.question_set,
+            "responses": session.responses,
+            "feedback": session.feedback,
+            "score": session.score,
+            "status": session.status,
+            "created_at": session.created_at,
+            "type": "mabd"
+        }
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/interview/{session_id}/evaluate")
+def mabd_evaluate_interview(session_id: str, db: Session = Depends(get_session)):
+    from app.services.mabd_services import evaluate_interview_session as mabd_eval_session
+    try:
+        session = mabd_eval_session(db, session_id)
+        return {
+            "id": session.id,
+            "user_id": session.user_id,
+            "job_id": session.job_id,
+            "question_set": session.question_set,
+            "responses": session.responses,
+            "feedback": session.feedback,
+            "score": session.score,
+            "status": session.status,
+            "created_at": session.created_at,
+            "type": "mabd"
+        }
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+class MabdSkillGapRequest(BaseModel):
+    user_id: str
+    job_id: str
+
+
+@app.post("/skill-gap/analyze")
+def mabd_run_skill_gap(body: MabdSkillGapRequest, db: Session = Depends(get_session)):
+    from app.services.mabd_services import analyze_skill_gap as mabd_analyze_gap
+    try:
+        analysis = mabd_analyze_gap(db, body.user_id, body.job_id)
+        return {
+            "id": analysis.id,
+            "user_id": analysis.user_id,
+            "job_id": analysis.job_id,
+            "missing_skills": analysis.missing_skills,
+            "proficiency_gap": analysis.proficiency_gap,
+            "learning_roadmap": analysis.learning_roadmap,
+            "salary_projection": analysis.salary_projection,
+            "created_at": analysis.created_at
+        }
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/skill-gap/history/{user_id}")
+def mabd_skill_gap_history(user_id: str, db: Session = Depends(get_session)):
+    from app.db.models import SkillGapAnalysis as SQLAlchemySkillGapAnalysis
+    try:
+        stmt = select(SQLAlchemySkillGapAnalysis).where(SQLAlchemySkillGapAnalysis.user_id == user_id).order_by(SQLAlchemySkillGapAnalysis.created_at.desc())
+        analyses = db.execute(stmt).scalars().all()
+        return [
+            {
+                "id": a.id,
+                "user_id": a.user_id,
+                "job_id": a.job_id,
+                "missing_skills": a.missing_skills,
+                "proficiency_gap": a.proficiency_gap,
+                "learning_roadmap": a.learning_roadmap,
+                "salary_projection": a.salary_projection,
+                "created_at": a.created_at
+            }
+            for a in analyses
+        ]
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.get("/healthz")

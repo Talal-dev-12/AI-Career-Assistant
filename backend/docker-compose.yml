@@ -290,18 +290,6 @@ services:
       retries: 3
       start_period: 15s
 
-  django-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.django
-    image: django-backend:latest
-    container_name: django_backend
-    restart: unless-stopped
-    ports:
-      - "8002:8002"
-    volumes:
-      - ./mabd:/srv/mabd
-
 volumes:
   pgdata:
   postgres_data:

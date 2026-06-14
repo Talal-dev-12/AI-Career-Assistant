@@ -1,56 +1,58 @@
 import json
 import logging
 from typing import List, Dict, Any
-from django.conf import settings
-from django.shortcuts import get_object_or_404
-from django.http import Http404
-from .models import User, Job, UserSkill, SkillGapAnalysis, InterviewSession
+from datetime import datetime
 
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from app.config import get_settings
+from app.db.models import User, Job, UserSkill, SkillGapAnalysis, MABDInterviewSession
 
 logger = logging.getLogger(__name__)
 
 # ================= LLM Clients Initialization =================
 
 def get_gemini_client():
-    if not settings.GEMINI_API_KEY or "your_gemini" in settings.GEMINI_API_KEY:
+    settings = get_settings()
+    if not settings.gemini_api_key or "your_gemini" in settings.gemini_api_key:
         return None
     try:
         from google import genai
-        return genai.Client(api_key=settings.GEMINI_API_KEY)
+        return genai.Client(api_key=settings.gemini_api_key)
     except Exception as e:
         logger.error(f"Failed to configure Gemini Client: {e}")
         return None
 
 def get_openai_client():
-    if not settings.OPENAI_API_KEY or "your_openai" in settings.OPENAI_API_KEY:
+    settings = get_settings()
+    if not settings.openai_api_key or "your_openai" in settings.openai_api_key:
         return None
     try:
         from openai import OpenAI
-        return OpenAI(api_key=settings.OPENAI_API_KEY)
+        return OpenAI(api_key=settings.openai_api_key)
     except Exception as e:
         logger.error(f"Failed to configure OpenAI: {e}")
         return None
 
 def call_llm(prompt: str, json_response: bool = True) -> str:
     """Helper to dispatch LLM calls to either Gemini or OpenAI, or fallback to mock."""
-    provider = settings.LLM_PROVIDER.lower()
-    
-    # 1. Try Gemini
-    if provider == "gemini":
-        gemini_client = get_gemini_client()
-        if gemini_client:
-            try:
-                config = {"response_mime_type": "application/json"} if json_response else None
-                response = gemini_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                    config=config
-                )
-                return response.text.strip()
-            except Exception as e:
-                logger.error(f"Gemini call failed, checking fallback: {e}")
+    settings = get_settings()
+    # Check if we should use gemini
+    gemini_client = get_gemini_client()
+    if gemini_client:
+        try:
+            config = {"response_mime_type": "application/json"} if json_response else None
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=config
+            )
+            return response.text.strip()
+        except Exception as e:
+            logger.error(f"Gemini call failed, checking fallback: {e}")
 
-    # 2. Try OpenAI
+    # Try OpenAI
     openai_client = get_openai_client()
     if openai_client:
         try:
@@ -66,7 +68,7 @@ def call_llm(prompt: str, json_response: bool = True) -> str:
         except Exception as e:
             logger.error(f"OpenAI call failed: {e}")
 
-    # 3. Fallback/Mock return
+    # Fallback/Mock return
     logger.warning("No working LLM provider API keys configured. Using Mock fallback.")
     return ""
 
@@ -256,11 +258,17 @@ def run_llm_interview_evaluation(questions: List[str], responses: List[str]) -> 
 
 # ================= Business Logic Functions =================
 
-def analyze_skill_gap(user_id: int, job_id: int) -> SkillGapAnalysis:
-    user = get_object_or_404(User, id=user_id)
-    job = get_object_or_404(Job, id=job_id)
+def analyze_skill_gap(db: Session, user_id: str, job_id: str) -> SkillGapAnalysis:
+    user = db.get(User, user_id)
+    if not user:
+        raise LookupError(f"User not found with ID {user_id}")
+    job = db.get(Job, job_id)
+    if not job:
+        raise LookupError(f"Job not found with ID {job_id}")
 
-    user_skills = UserSkill.objects.filter(user=user)
+    # Fetch user skills
+    skills_stmt = select(UserSkill).where(UserSkill.user_id == user_id)
+    user_skills = db.execute(skills_stmt).scalars().all()
     
     skills_data = [
         {
@@ -277,40 +285,52 @@ def analyze_skill_gap(user_id: int, job_id: int) -> SkillGapAnalysis:
         job_description=job.description
     )
     
-    db_analysis = SkillGapAnalysis.objects.create(
-        user=user,
-        job=job,
+    db_analysis = SkillGapAnalysis(
+        user_id=user.id,
+        job_id=job.id,
         missing_skills=analysis_result.get("missing_skills", []),
         proficiency_gap=analysis_result.get("proficiency_gap", []),
         learning_roadmap=analysis_result.get("learning_roadmap", []),
         salary_projection=analysis_result.get("salary_projection", 0.0)
     )
+    db.add(db_analysis)
+    db.commit()
+    db.refresh(db_analysis)
     
     return db_analysis
 
 
-def start_interview_session(user_id: int, job_id: int) -> InterviewSession:
-    user = get_object_or_404(User, id=user_id)
-    job = get_object_or_404(Job, id=job_id)
+def start_interview_session(db: Session, user_id: str, job_id: str) -> MABDInterviewSession:
+    user = db.get(User, user_id)
+    if not user:
+        raise LookupError(f"User not found with ID {user_id}")
+    job = db.get(Job, job_id)
+    if not job:
+        raise LookupError(f"Job not found with ID {job_id}")
 
     questions = run_llm_interview_questions(job.title, job.description)
     
-    db_session = InterviewSession.objects.create(
-        user=user,
-        job=job,
+    db_session = MABDInterviewSession(
+        user_id=user.id,
+        job_id=job.id,
         question_set=questions,
         responses=[""] * len(questions),
         feedback={},
         score=None,
         status="started"
     )
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
     
     return db_session
 
 
-def submit_interview_response(session_id: int, question_index: int, answer: str) -> InterviewSession:
-    db_session = get_object_or_404(InterviewSession, id=session_id)
-    
+def submit_interview_response(db: Session, session_id: str, question_index: int, answer: str) -> MABDInterviewSession:
+    db_session = db.get(MABDInterviewSession, session_id)
+    if not db_session:
+        raise LookupError(f"Interview session not found with ID {session_id}")
+        
     if db_session.status != "started":
         raise ValueError("Cannot submit responses to a completed or evaluated session")
 
@@ -323,13 +343,18 @@ def submit_interview_response(session_id: int, question_index: int, answer: str)
     updated_responses[question_index] = answer
     
     db_session.responses = updated_responses
-    db_session.save()
+    db_session.save_context_change = True  # simple flag to force update or just commit
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
     
     return db_session
 
 
-def evaluate_interview_session(session_id: int) -> InterviewSession:
-    db_session = get_object_or_404(InterviewSession, id=session_id)
+def evaluate_interview_session(db: Session, session_id: str) -> MABDInterviewSession:
+    db_session = db.get(MABDInterviewSession, session_id)
+    if not db_session:
+        raise LookupError(f"Interview session not found with ID {session_id}")
     
     evaluation_result = run_llm_interview_evaluation(
         questions=db_session.question_set,
@@ -339,6 +364,8 @@ def evaluate_interview_session(session_id: int) -> InterviewSession:
     db_session.feedback = evaluation_result
     db_session.score = evaluation_result.get("overall_score", 0)
     db_session.status = "evaluated"
-    db_session.save()
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
     
     return db_session
