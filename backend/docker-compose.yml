@@ -1,0 +1,102 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-verify:
+    build: .
+    command: python -m app.pipeline.workers verify
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-docgen:
+    build: .
+    command: python -m app.pipeline.workers docgen
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./uploads:/srv/uploads
+
+  worker-submit:
+    build: .
+    command: python -m app.pipeline.workers submit
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./uploads:/srv/uploads
+
+  tracker:
+    build: .
+    command: python -m app.pipeline.tracking
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://career:career@db:5432/career
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/srv/uploads
+
+  scheduler:
+    build: .
+    command: python -m app.pipeline.scheduler
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_started
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: career
+      POSTGRES_PASSWORD: career
+      POSTGRES_DB: career
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U career"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  pgdata:

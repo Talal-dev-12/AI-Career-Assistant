@@ -4,23 +4,18 @@ import React, { useState } from "react";
 import Link from "next/link";
 import {
   MessageSquareCode,
-  Sparkles,
   Video,
   Mic,
   MicOff,
   Send,
   Play,
-  TrendingUp,
   Award,
   BookOpen,
-  ArrowRight,
   RefreshCcw,
-  CheckCircle,
-  HelpCircle,
   ChevronRight,
-  Volume2,
 } from "lucide-react";
 import styles from "./Interview.module.css";
+import { useBackend } from "@/components/BackendContext";
 
 interface QAFeedback {
   question: string;
@@ -30,98 +25,242 @@ interface QAFeedback {
   improvement: string;
 }
 
+interface MABDQuestionFeedback {
+  question: string;
+  response: string;
+  score: number;
+  strengths: string;
+  improvement_suggestions: string;
+}
+
+interface TalhaTurnFeedback {
+  question: string;
+  answer: string;
+  score?: number;
+  feedback?: string;
+}
+
 export default function InterviewPage() {
+  const { apiUrl, userId } = useBackend();
+
   // Simulator modes: 'setup' | 'active' | 'feedback'
   const [mode, setMode] = useState<"setup" | "active" | "feedback">("setup");
-  const [targetJob, setTargetJob] = useState("Vercel - Senior React Developer");
+  const [prepMethod, setPrepMethod] = useState<"talha" | "mabd">("talha");
+  const [targetJob, setTargetJob] = useState("");
+  const [jobs, setJobs] = useState<{ id: string; title: string; company: string }[]>([]);
 
   // Active session states
+  const [sessionId, setSessionId] = useState<string | number | null>(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [candidateTranscript, setCandidateTranscript] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const [chatLog, setChatLog] = useState<{ sender: "ai" | "user"; text: string }[]>([
-    {
-      sender: "ai",
-      text: "Welcome, John. Let's start with your technical background. In Next.js, what is the core difference between Static Rendering and Dynamic Rendering, and how do you force a route to be evaluated dynamically?",
-    },
-  ]);
-
-  const questions = [
-    "In Next.js, what is the core difference between Static Rendering and Dynamic Rendering, and how do you force a route to be evaluated dynamically?",
-    "Excellent explanation. Next, how would you optimize bundle sizes in a Next.js application that relies on heavy third-party visualization libraries?",
-  ];
+  const [chatLog, setChatLog] = useState<{ sender: "ai" | "user"; text: string }[]>([]);
+  const [activeQuestions, setActiveQuestions] = useState<string[]>([]);
+  const [evaluationScore, setEvaluationScore] = useState(85);
+  const [qaFeedbacks, setQaFeedbacks] = useState<QAFeedback[]>([]);
+  const [overallFeedback, setOverallFeedback] = useState("");
 
   const simulatedAnswers = [
     "In Next.js, static rendering pre-renders routes at build time, making them extremely fast and cacheable. Dynamic rendering renders routes at request time, which is necessary when pages need user-specific data. To force dynamic rendering, we can export const dynamic = 'force-dynamic' or use dynamic functions like cookies() or headers() inside the component.",
     "To optimize bundle sizes, I would use dynamic imports via next/dynamic to lazy load the heavy charts so they are only downloaded on the client when needed. I would also run @next/bundle-analyzer to audit packages and prune unused dependencies, or configure tree-shaking in imports.",
+    "FastAPI is built on Starlette and Pydantic, enabling automatic validation and high-speed execution. System scaling involves vertical/horizontal options, load balancing, database connection pools, and utilizing a Redis cache layer for read-heavy operations.",
+    "I design databases by first normalizing tables to 3NF, establishing indexes on foreign key columns and frequently queried fields, and conducting performance tests under high concurrency.",
+    "I had to learn Docker containerization for a deployment project. I went through Docker docs, constructed sample containers, and built multi-stage deployment workflows to reduce image size by 50%."
   ];
 
-  // Feedback data
-  const evaluationScore = 86;
-  const qaFeedbacks: QAFeedback[] = [
-    {
-      question: "In Next.js, what is the core difference between Static Rendering and Dynamic Rendering, and how do you force a route to be evaluated dynamically?",
-      answer: "In Next.js, static rendering pre-renders routes at build time, making them extremely fast and cacheable. Dynamic rendering renders routes at request time...",
-      score: 90,
-      strength: "Accurately identified build-time vs. request-time differences and correctly named dynamic utility tokens like cookies() and headers().",
-      improvement: "Consider expanding on how CDN edge caching behaves during incremental static regeneration (ISR) for static pages.",
-    },
-    {
-      question: "How would you optimize bundle sizes in a Next.js application that relies on heavy third-party visualization libraries?",
-      answer: "To optimize bundle sizes, I would use dynamic imports via next/dynamic to lazy load the heavy charts so they are only downloaded on the client...",
-      score: 82,
-      strength: "Good utilization of next/dynamic for dynamic chunk loading and referencing the bundle analyzer for bundle audits.",
-      improvement: "Prune filler phrases such as 'basically' or 'like' from speech starts to sound more authoritative in technical panels.",
-    },
-  ];
+  // Fetch jobs dynamically for MABD method
+  React.useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/jobs`);
+        if (res.ok) {
+          const data = await res.json();
+          setJobs(data);
+          if (data.length > 0) {
+            setTargetJob(data[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch jobs for interview setup:", err);
+      }
+    };
+    fetchJobs();
+  }, [apiUrl]);
 
   // Handlers
-  const startInterview = () => {
-    setMode("active");
-    setQuestionIndex(0);
+  const startInterview = async () => {
+    setLoading(true);
+    setChatLog([]);
     setCandidateTranscript("");
-    setChatLog([
-      {
-        sender: "ai",
-        text: questions[0],
-      },
-    ]);
+    
+    try {
+      if (prepMethod === "mabd") {
+        const res = await fetch(`${apiUrl}/interview/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId || "",
+            job_id: targetJob,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setSessionId(data.id);
+          setActiveQuestions(data.question_set || []);
+          setQuestionIndex(0);
+          setChatLog([
+            {
+              sender: "ai",
+              text: data.question_set?.[0] || "Could you tell me about your technical background?",
+            },
+          ]);
+          setMode("active");
+        }
+      } else {
+        // Talha uses role ("software engineer" by default)
+        const res = await fetch(`${apiUrl}/users/${userId}/interview/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            role: "software engineer",
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setSessionId(data.session_id);
+          setQuestionIndex(0);
+          setChatLog([
+            {
+              sender: "ai",
+              text: data.question,
+            },
+          ]);
+          setActiveQuestions([data.question]);
+          setMode("active");
+        }
+      }
+    } catch (err) {
+      console.error("Failed to start mock interview:", err);
+      alert("Failed to start interview. Make sure the backend is running!");
+    }
+    setLoading(false);
   };
 
   const handleStartSpeaking = () => {
     setIsSpeaking(true);
     // Simulate candidate speaking and speech-to-text typing out
     setTimeout(() => {
-      setCandidateTranscript(simulatedAnswers[questionIndex]);
+      setCandidateTranscript(simulatedAnswers[questionIndex % simulatedAnswers.length]);
       setIsSpeaking(false);
     }, 2000);
   };
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     if (!candidateTranscript) {
       alert("Please record or write your answer first!");
       return;
     }
+    setLoading(true);
 
-    // Add candidate answer to log
-    const updatedLog = [...chatLog, { sender: "user" as const, text: candidateTranscript }];
-    setChatLog(updatedLog);
+    const currentAnswer = candidateTranscript;
+    setChatLog((prev) => [...prev, { sender: "user" as const, text: currentAnswer }]);
     setCandidateTranscript("");
 
-    // Advance question or finish
-    if (questionIndex < questions.length - 1) {
-      const nextQIdx = questionIndex + 1;
-      setQuestionIndex(nextQIdx);
-      setTimeout(() => {
-        setChatLog((prev) => [...prev, { sender: "ai", text: questions[nextQIdx] }]);
-      }, 1000);
-    } else {
-      // Complete interview and go to feedback
-      setTimeout(() => {
-        setMode("feedback");
-      }, 1500);
+    try {
+      if (prepMethod === "mabd") {
+        const res = await fetch(`${apiUrl}/interview/${sessionId}/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question_index: questionIndex,
+            answer: currentAnswer,
+          }),
+        });
+
+        if (res.ok) {
+          await res.json();
+          const nextIndex = questionIndex + 1;
+          
+          if (nextIndex < activeQuestions.length) {
+            setQuestionIndex(nextIndex);
+            setTimeout(() => {
+              setChatLog((prev) => [...prev, { sender: "ai", text: activeQuestions[nextIndex] }]);
+            }, 1000);
+          } else {
+            // Evaluated session
+            const evalRes = await fetch(`${apiUrl}/interview/${sessionId}/evaluate`, {
+              method: "POST",
+            });
+            if (evalRes.ok) {
+              const evalData = await evalRes.json();
+              setEvaluationScore(evalData.score || 85);
+              setOverallFeedback(evalData.feedback?.overall_feedback || "The candidate shows good command of core technologies.");
+              
+              const mappedQA: QAFeedback[] = (evalData.feedback?.questions_feedback || []).map((qa: MABDQuestionFeedback) => ({
+                question: qa.question,
+                answer: qa.response,
+                score: qa.score,
+                strength: qa.strengths,
+                improvement: qa.improvement_suggestions,
+              }));
+              setQaFeedbacks(mappedQA);
+              
+              setTimeout(() => {
+                setMode("feedback");
+              }, 1500);
+            }
+          }
+        }
+      } else {
+        const res = await fetch(`${apiUrl}/interview/${sessionId}/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            answer: currentAnswer,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.next_question) {
+            setQuestionIndex((prev) => prev + 1);
+            setActiveQuestions((prev) => [...prev, data.next_question]);
+            setTimeout(() => {
+              setChatLog((prev) => [...prev, { sender: "ai", text: data.next_question }]);
+            }, 1000);
+          }
+
+          if (data.completed) {
+            const transcriptRes = await fetch(`${apiUrl}/interview/${sessionId}`);
+            if (transcriptRes.ok) {
+              const transcriptData = await transcriptRes.json();
+              setEvaluationScore(Math.round((transcriptData.average_score || 8.5) * 10)); // map 1-10 to 1-100
+              setOverallFeedback("The interview session has been processed successfully. Detailed responses are graded below.");
+              
+              const mappedQA: QAFeedback[] = (transcriptData.turns || []).map((turn: TalhaTurnFeedback) => ({
+                question: turn.question,
+                answer: turn.answer,
+                score: Math.round((turn.score || 8.0) * 10),
+                strength: turn.feedback || "Solid response with relevant keywords.",
+                improvement: "Enhance details with structural metrics.",
+              }));
+              setQaFeedbacks(mappedQA);
+
+              setTimeout(() => {
+                setMode("feedback");
+              }, 1500);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to submit interview answer:", err);
     }
+    setLoading(false);
   };
 
   return (
@@ -142,28 +281,75 @@ export default function InterviewPage() {
           </div>
           <h2 className={styles.setupTitle}>Configure Practice Session</h2>
           <p className={styles.setupDesc}>
-            The AI Agent will generate a custom panel simulation based on the requirements of your target job. It conducts technical screening, logs transcripts, and evaluates performance.
+            Select your preferred preparation method and target position. The AI Agent will generate custom panel simulations to evaluate your responses.
           </p>
 
-          <div className={styles.selectBox} style={{ textAlign: "left" }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-              SELECT TARGET POSITION
-            </span>
-            <select
-              style={{ background: "transparent", color: "inherit", width: "100%", fontSize: 14, cursor: "pointer" }}
-              value={targetJob}
-              onChange={(e) => setTargetJob(e.target.value)}
+          {/* Prep Method Selection cards */}
+          <div style={{ display: "flex", gap: 16, width: "100%", marginBottom: 20 }}>
+            <div 
+              onClick={() => setPrepMethod("talha")}
+              style={{
+                flex: 1,
+                padding: 16,
+                borderRadius: 12,
+                border: prepMethod === "talha" ? "2px solid var(--primary)" : "1px solid var(--border-color)",
+                background: prepMethod === "talha" ? "rgba(99, 102, 241, 0.05)" : "rgba(255,255,255,0.01)",
+                cursor: "pointer",
+                textAlign: "left"
+              }}
             >
-              <option value="Vercel - Senior React Developer">Vercel - Senior React Developer (98% Match)</option>
-              <option value="Stripe - Software Engineer Frontend">Stripe - Software Engineer - Frontend (92% Match)</option>
-              <option value="Supabase - Frontend Engineer">Supabase - Frontend Engineer (87% Match)</option>
-            </select>
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: prepMethod === "talha" ? "var(--primary)" : "inherit" }}>Role-based Simulator (Talha)</h3>
+              <p style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                Engage in conversational Q&A sessions. Receive grading and coaching feedback after each turn.
+              </p>
+            </div>
+            
+            <div 
+              onClick={() => setPrepMethod("mabd")}
+              style={{
+                flex: 1,
+                padding: 16,
+                borderRadius: 12,
+                border: prepMethod === "mabd" ? "2px solid var(--secondary)" : "1px solid var(--border-color)",
+                background: prepMethod === "mabd" ? "rgba(20, 184, 166, 0.05)" : "rgba(255,255,255,0.01)",
+                cursor: "pointer",
+                textAlign: "left"
+              }}
+            >
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: prepMethod === "mabd" ? "var(--secondary)" : "inherit" }}>Job-focused Evaluator (MABD)</h3>
+              <p style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                Complete a structured panel of 5 pre-generated questions. Get bulk performance reports at the end.
+              </p>
+            </div>
           </div>
 
-          <button className={styles.startBtn} onClick={startInterview}>
+          {prepMethod === "mabd" && (
+            <div className={styles.selectBox} style={{ textAlign: "left", marginBottom: 20 }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                SELECT TARGET POSITION
+              </span>
+              <select
+                style={{ background: "transparent", color: "inherit", width: "100%", fontSize: 14, cursor: "pointer", border: "none", outline: "none" }}
+                value={targetJob}
+                onChange={(e) => setTargetJob(e.target.value)}
+              >
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id} style={{ background: "var(--bg-dark)" }}>
+                    {job.company} - {job.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <button className={styles.startBtn} onClick={startInterview} disabled={loading}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Play size={16} fill="white" />
-              <span>Launch Mock Interview Simulator</span>
+              {loading ? (
+                <span className="status-dot active" style={{ width: 8, height: 8 }}></span>
+              ) : (
+                <Play size={16} fill="white" />
+              )}
+              <span>{loading ? "Launching Simulator..." : "Launch Mock Interview Simulator"}</span>
             </div>
           </button>
         </div>
@@ -204,6 +390,7 @@ export default function InterviewPage() {
               <button
                 className={`${styles.micBtn} ${isSpeaking ? styles.micBtnActive : ""}`}
                 onClick={handleStartSpeaking}
+                disabled={loading}
               >
                 {isSpeaking ? (
                   <>
@@ -217,9 +404,9 @@ export default function InterviewPage() {
                   </>
                 )}
               </button>
-              <button className={styles.submitBtn} onClick={handleSubmitAnswer}>
+              <button className={styles.submitBtn} onClick={handleSubmitAnswer} disabled={loading}>
                 <Send size={16} />
-                <span>Submit Answer</span>
+                <span>{loading ? "Analyzing Answer..." : "Submit Answer"}</span>
               </button>
             </div>
 
@@ -307,6 +494,17 @@ export default function InterviewPage() {
             </div>
           </div>
 
+          {overallFeedback && (
+            <div style={{ marginTop: 20, padding: 16, background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", borderRadius: 12 }}>
+              <strong style={{ display: "block", fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>
+                AI Coach Assessment
+              </strong>
+              <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                {overallFeedback}
+              </p>
+            </div>
+          )}
+
           {/* Question breakdown list */}
           <div className={styles.analysisSection}>
             <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>
@@ -343,7 +541,7 @@ export default function InterviewPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid var(--border-color)", paddingTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)" }}>
               <BookOpen size={16} />
-              <span>We recommend practicing the Postgres components on your roadmap next.</span>
+              <span>We recommend practicing the components on your roadmap next.</span>
             </div>
             <div style={{ display: "flex", gap: 12 }}>
               <Link href="/roadmap">

@@ -1,0 +1,118 @@
+version: "3.9"
+
+services:
+
+  # ── Databases ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: career_assistant
+      POSTGRES_USER: ${POSTGRES_USER:-causer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-capass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U causer -d career_assistant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+
+  mongodb:
+    image: mongo:6
+    environment:
+      MONGO_INITDB_DATABASE: career_assistant
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  elasticsearch:
+    image: elasticsearch:8.12.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  # ── Backend ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://causer:capass@postgres:5432/career_assistant
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/career_assistant
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: npm run dev
+
+  # ── Agent Worker ───────────────────────────────────────────────────────
+  agent_worker:
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://causer:capass@postgres:5432/career_assistant
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017/career_assistant
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
+      INDEED_API_KEY: ${INDEED_API_KEY}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_REGION: ${AWS_REGION}
+    depends_on:
+      - backend
+      - postgres
+      - redis
+    volumes:
+      - ./agents:/app
+    command: python -m worker.main
+
+  # ── Frontend ───────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+volumes:
+  postgres_data:
+  mongo_data:
+  es_data:

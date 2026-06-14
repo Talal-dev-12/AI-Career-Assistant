@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   FileText,
@@ -10,9 +10,6 @@ import {
   Sparkles,
   Check,
   AlertTriangle,
-  FileSpreadsheet,
-  RefreshCw,
-  Search,
 } from "lucide-react";
 import styles from "./Documents.module.css";
 import jobsStyles from "../jobs/Jobs.module.css";

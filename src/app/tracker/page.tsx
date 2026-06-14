@@ -2,18 +2,10 @@
 
 import React, { useState } from "react";
 import {
-  KanbanSquare,
-  Sparkles,
-  Search,
-  Plus,
   X,
   Mail,
-  Calendar,
   Clock,
-  CheckCircle,
-  AlertOctagon,
   StickyNote,
-  UserCheck,
 } from "lucide-react";
 import styles from "./Tracker.module.css";
 

@@ -8,11 +8,7 @@ import {
   ArrowLeft,
   UploadCloud,
   Check,
-  Briefcase,
-  MapPin,
-  BookOpen,
   DollarSign,
-  TrendingUp,
 } from "lucide-react";
 import styles from "./Onboarding.module.css";
 import profileStyles from "../profile/Profile.module.css";

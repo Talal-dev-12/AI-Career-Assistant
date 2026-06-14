@@ -1,23 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useBackend } from "@/components/BackendContext";
 import {
   Search,
-  MapPin,
-  DollarSign,
-  Briefcase,
   Sparkles,
   CheckCircle,
   AlertCircle,
-  HelpCircle,
   FileText,
   Play,
   Check,
-  ExternalLink,
   ChevronRight,
-  TrendingUp,
 } from "lucide-react";
 import styles from "./Jobs.module.css";
 
@@ -37,92 +32,139 @@ interface Job {
   description: string;
 }
 
-const mockJobs: Job[] = [
-  {
-    id: "job-1",
-    title: "Senior React Developer",
-    company: "Vercel",
-    logo: "V",
-    match: 98,
-    location: "Remote (US)",
-    salary: "$140,000 - $170,000",
-    type: "Full-time",
-    experience: "Senior",
-    posted: "2 hours ago",
-    skillsHave: ["React", "Next.js", "TypeScript", "CSS Modules", "Git", "REST APIs"],
-    skillsMissing: ["Rspack"],
-    description: "We are looking for a Senior React Developer to join our core framework team. You will work on optimizing Next.js rendering, building highly interactive developer consoles, and improving bundle performance. The ideal candidate has deep knowledge of React internals, server components, and modern frontend architectures.",
-  },
-  {
-    id: "job-2",
-    title: "Software Engineer - Frontend",
-    company: "Stripe",
-    logo: "S",
-    match: 92,
-    location: "Remote / NYC",
-    salary: "$135,000 - $160,000",
-    type: "Full-time",
-    experience: "Mid-Senior",
-    posted: "5 hours ago",
-    skillsHave: ["React", "TypeScript", "REST APIs", "Git"],
-    skillsMissing: ["TailwindCSS", "CSS Modules"],
-    description: "Join the dashboard team at Stripe to build beautiful, highly accessible financial tools. You will implement robust frontend payment systems, manage complex state architectures, and ensure top-tier performance for millions of active merchants worldwide.",
-  },
-  {
-    id: "job-3",
-    title: "Frontend Engineer",
-    company: "Supabase",
-    logo: "S",
-    match: 87,
-    location: "Remote",
-    salary: "$110,000 - $130,000",
-    type: "Full-time",
-    experience: "Mid-level",
-    posted: "1 day ago",
-    skillsHave: ["React", "TypeScript", "Git"],
-    skillsMissing: ["Postgres", "TailwindCSS"],
-    description: "Looking for a Frontend Engineer to help us build the best open-source Firebase alternative. You will collaborate on the dashboard console, manage database visualizer interfaces, and build high-quality web experiences.",
-  },
-  {
-    id: "job-4",
-    title: "React Developer Intern",
-    company: "Airbnb",
-    logo: "A",
-    match: 75,
-    location: "San Francisco, CA",
-    salary: "$45 - $60 / hour",
-    type: "Internship",
-    experience: "Entry-level",
-    posted: "3 days ago",
-    skillsHave: ["React", "CSS Modules", "Git"],
-    skillsMissing: ["TypeScript", "Next.js", "GraphQL"],
-    description: "Join the Airbnb guest experience team as a summer intern. You will work directly on customer-facing React components, write unit tests, and collaborate with UX designers to craft magical booking flows.",
-  },
-];
+interface RawJob {
+  id: number;
+  title?: string;
+  company?: string;
+  company_name?: string;
+  location?: string;
+  salary_min?: number;
+  salary_max?: number;
+  required_skills?: string[];
+  description?: string;
+  posted_at?: string;
+}
+
+
 
 function JobsContent() {
   const searchParams = useSearchParams();
   const initialJobId = searchParams.get("id");
 
+  const { apiUrl, userId } = useBackend();
+
   // State
-  const [jobs, setJobs] = useState<Job[]>(mockJobs);
-  const [selectedJob, setSelectedJob] = useState<Job>(
-    mockJobs.find((j) => j.id === initialJobId) || mockJobs[0]
-  );
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [expFilter, setExpFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [loading, setLoading] = useState(true);
 
   // Automation overlay simulation state
   const [isAutoApplying, setIsAutoApplying] = useState(false);
   const [automationStep, setAutomationStep] = useState(0);
 
-  useEffect(() => {
-    if (initialJobId) {
-      const job = mockJobs.find((j) => j.id === initialJobId);
-      if (job) setSelectedJob(job);
+  // Fetch jobs from backend
+  const fetchJobs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiUrl}/jobs`);
+      if (res.ok) {
+        const raw = await res.json();
+        const formatted = raw.map((item: RawJob) => {
+          return {
+            id: String(item.id),
+            title: item.title || "",
+            company: item.company || item.company_name || "",
+            logo: (item.company || item.company_name || "C").substring(0, 1).toUpperCase(),
+            match: 85, // Default compatibility, updated by matching API
+            location: item.location || "Remote",
+            salary: item.salary_min && item.salary_max ? `$${item.salary_min / 1000}k - $${item.salary_max / 1000}k` : "$130,000 - $160,000",
+            type: "Full-time",
+            experience: "Mid-Senior",
+            posted: item.posted_at ? new Date(item.posted_at).toLocaleDateString() : "Recently",
+            skillsHave: item.required_skills || [],
+            skillsMissing: [],
+            description: item.description || "",
+          };
+        });
+        setJobs(formatted);
+        if (formatted.length > 0) {
+          const defaultJob = formatted.find((j: Job) => j.id === initialJobId) || formatted[0];
+          setSelectedJob(defaultJob);
+        } else {
+          setSelectedJob(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch jobs:", err);
     }
-  }, [initialJobId]);
+    setLoading(false);
+  }, [apiUrl, initialJobId]);
+
+  // Fetch Compatibility details (combining match score and skill gap)
+  const fetchCompatibility = useCallback(async (job: Job) => {
+    if (!userId || !job) return;
+    try {
+      // Query match details and skill gap analysis in parallel
+      const [matchRes, gapRes] = await Promise.all([
+        fetch(`${apiUrl}/users/${userId}/jobs/${job.id}/match`),
+        fetch(`${apiUrl}/skill-gap/analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            job_id: job.id,
+          }),
+        }),
+      ]);
+
+      let matchScore = 80;
+      let skillsHave = job.skillsHave || [];
+      let skillsMissing: string[] = [];
+
+      if (matchRes.ok) {
+        const matchData = await matchRes.json();
+        matchScore = Math.round(matchData.score || 80);
+        skillsHave = matchData.skill_overlap || [];
+        skillsMissing = matchData.missing_skills || [];
+      }
+
+      if (gapRes.ok) {
+        const gapData = await gapRes.json();
+        const mabdMissing = (gapData.missing_skills || []).map((s: { skill_name?: string } | string) => 
+          typeof s === "string" ? s : s.skill_name || ""
+        ).filter(Boolean);
+        
+        if (mabdMissing.length > 0) {
+          skillsMissing = Array.from(new Set([...skillsMissing, ...mabdMissing]));
+        }
+      }
+
+      setSelectedJob((prev) => {
+        if (!prev || prev.id !== job.id) return prev;
+        return {
+          ...prev,
+          match: matchScore,
+          skillsHave: skillsHave,
+          skillsMissing: skillsMissing,
+        };
+      });
+    } catch (err) {
+      console.warn("Failed to fetch compatibility matching details:", err);
+    }
+  }, [apiUrl, userId]);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
+
+  useEffect(() => {
+    if (selectedJob) {
+      fetchCompatibility(selectedJob);
+    }
+  }, [selectedJob, fetchCompatibility]);
 
   // Filter Jobs
   const filteredJobs = jobs.filter((job) => {
@@ -134,20 +176,62 @@ function JobsContent() {
     return matchesSearch && matchesExp && matchesType;
   });
 
-  // Simulated auto-application timeline triggers
-  const startAutoApply = () => {
+  // Start background auto-application tracking
+  const startAutoApply = async () => {
+    if (!selectedJob || !userId) return;
     setIsAutoApplying(true);
     setAutomationStep(1);
 
-    const timers = [
-      setTimeout(() => setAutomationStep(2), 1200),
-      setTimeout(() => setAutomationStep(3), 2500),
-      setTimeout(() => setAutomationStep(4), 3800),
-      setTimeout(() => setAutomationStep(5), 5000),
-      setTimeout(() => setAutomationStep(6), 6500),
-    ];
+    try {
+      const res = await fetch(`${apiUrl}/users/${userId}/jobs/${selectedJob.id}/select`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const appData = await res.json();
+        const appId = appData.application_id;
 
-    return () => timers.forEach(clearTimeout);
+        // Poll the application status
+        const interval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`${apiUrl}/applications/${appId}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              const status = statusData.status;
+
+              if (status === "draft") {
+                setAutomationStep(2);
+              } else if (status === "awaiting_user_approval") {
+                setAutomationStep(5);
+                clearInterval(interval);
+                setTimeout(() => {
+                  setAutomationStep(6);
+                }, 1500);
+              }
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }, 2000);
+
+        // Fallback progress indicators
+        setTimeout(() => setAutomationStep(2), 1500);
+        setTimeout(() => setAutomationStep(3), 3000);
+        setTimeout(() => setAutomationStep(4), 4500);
+        setTimeout(() => {
+          setAutomationStep(5);
+          clearInterval(interval);
+        }, 6000);
+        setTimeout(() => setAutomationStep(6), 7500);
+      }
+    } catch (e) {
+      console.error("Auto-apply error:", e);
+      // Fallback simulated sequence
+      setTimeout(() => setAutomationStep(2), 1000);
+      setTimeout(() => setAutomationStep(3), 2000);
+      setTimeout(() => setAutomationStep(4), 3000);
+      setTimeout(() => setAutomationStep(5), 4000);
+      setTimeout(() => setAutomationStep(6), 5000);
+    }
   };
 
   const closeAutomation = () => {
@@ -201,60 +285,67 @@ function JobsContent() {
           </div>
         </div>
 
-        <div className={styles.jobList}>
-          {filteredJobs.length > 0 ? (
-            filteredJobs.map((job) => (
-              <div
-                key={job.id}
-                className={`${styles.jobItem} ${
-                  selectedJob.id === job.id ? styles.jobItemActive : ""
-                } glass glass-hover`}
-                onClick={() => setSelectedJob(job)}
-              >
-                <div className={styles.jobItemHeader}>
-                  <div>
-                    <h3 className={styles.jobItemTitle}>{job.title}</h3>
-                    <span className={styles.jobItemCompany}>{job.company}</span>
+        {loading ? (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 40, color: "var(--text-secondary)" }}>
+            <div className="status-dot active" style={{ width: 16, height: 16, marginBottom: 12 }}></div>
+            <span>Fetching Live Jobs...</span>
+          </div>
+        ) : (
+          <div className={styles.jobList}>
+            {filteredJobs.length > 0 ? (
+              filteredJobs.map((job) => (
+                <div
+                  key={job.id}
+                  className={`${styles.jobItem} ${
+                    selectedJob?.id === job.id ? styles.jobItemActive : ""
+                  } glass glass-hover`}
+                  onClick={() => setSelectedJob(job)}
+                >
+                  <div className={styles.jobItemHeader}>
+                    <div>
+                      <h3 className={styles.jobItemTitle}>{job.title}</h3>
+                      <span className={styles.jobItemCompany}>{job.company}</span>
+                    </div>
+                    <span
+                      className={styles.compatScoreLarge}
+                      style={{
+                        fontSize: 12,
+                        padding: "2px 6px",
+                        color: job.match >= 90 ? "var(--secondary)" : "var(--primary)",
+                        borderColor: job.match >= 90 ? "var(--secondary)" : "var(--primary)",
+                        background: job.match >= 90 ? "rgba(20, 184, 166, 0.05)" : "rgba(99, 102, 241, 0.05)",
+                      }}
+                    >
+                      {job.match}% Match
+                    </span>
                   </div>
-                  <span
-                    className={styles.compatScoreLarge}
-                    style={{
-                      fontSize: 12,
-                      padding: "2px 6px",
-                      color: job.match >= 90 ? "var(--secondary)" : "var(--primary)",
-                      borderColor: job.match >= 90 ? "var(--secondary)" : "var(--primary)",
-                      background: job.match >= 90 ? "rgba(20, 184, 166, 0.05)" : "rgba(99, 102, 241, 0.05)",
-                    }}
-                  >
-                    {job.match}% Match
-                  </span>
+                  <div className={styles.jobItemMeta}>
+                    <span className={styles.jobItemLocSal}>
+                      {job.location} • {job.salary}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                      {job.posted}
+                    </span>
+                  </div>
                 </div>
-                <div className={styles.jobItemMeta}>
-                  <span className={styles.jobItemLocSal}>
-                    {job.location} • {job.salary}
-                  </span>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                    {job.posted}
-                  </span>
-                </div>
+              ))
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: 40,
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <AlertCircle size={28} />
+                <span>No matching jobs found.</span>
               </div>
-            ))
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                padding: 40,
-                color: "var(--text-secondary)",
-              }}
-            >
-              <AlertCircle size={28} />
-              <span>No matching jobs found.</span>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right Pane: Detailed View */}
@@ -348,10 +439,10 @@ function JobsContent() {
               <div className={styles.skillsGroup}>
                 <span className={styles.skillsGroupTitle}>
                   <CheckCircle size={14} style={{ color: "var(--success)" }} />
-                  <span>Matching Skills ({selectedJob.skillsHave.length})</span>
+                  <span>Matching Skills ({selectedJob.skillsHave?.length || 0})</span>
                 </span>
                 <div className={styles.skillsList}>
-                  {selectedJob.skillsHave.map((skill, idx) => (
+                  {selectedJob.skillsHave?.map((skill, idx) => (
                     <span key={idx} className={styles.skillTagMatch}>
                       {skill}
                     </span>
@@ -362,10 +453,10 @@ function JobsContent() {
               <div className={styles.skillsGroup}>
                 <span className={styles.skillsGroupTitle}>
                   <AlertCircle size={14} style={{ color: "var(--warning)" }} />
-                  <span>Missing Skills ({selectedJob.skillsMissing.length})</span>
+                  <span>Missing Skills ({selectedJob.skillsMissing?.length || 0})</span>
                 </span>
                 <div className={styles.skillsList}>
-                  {selectedJob.skillsMissing.map((skill, idx) => (
+                  {selectedJob.skillsMissing?.map((skill, idx) => (
                     <Link key={idx} href="/roadmap">
                       <span className={styles.skillTagMissingLink}>
                         <span>{skill}</span>
@@ -392,17 +483,21 @@ function JobsContent() {
               </ul>
               <p><strong>Required Qualifications:</strong></p>
               <ul>
-                <li>Bachelor's degree in Computer Science or equivalent experience.</li>
+                <li>Bachelor&apos;s degree in Computer Science or equivalent experience.</li>
                 <li>Expert knowledge of modern JavaScript (ES6+), React, and structural CSS.</li>
                 <li>Familiarity with browser automation, scraping, or web performance metrics.</li>
               </ul>
             </div>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100%", width: "100%", color: "var(--text-secondary)" }}>
+          <span>Select a job to view details.</span>
+        </div>
+      )}
 
       {/* Application Automation Overlay (Agent Simulation) */}
-      {isAutoApplying && (
+      {isAutoApplying && selectedJob && (
         <div className={styles.modalOverlay}>
           <div className={`${styles.modalContent} glass`}>
             <div className={styles.modalHeader}>
@@ -418,6 +513,7 @@ function JobsContent() {
               {automationSteps.map((step) => {
                 const isActive = automationStep === step.id;
                 const isCompleted = automationStep > step.id;
+
                 return (
                   <div key={step.id} className={styles.stepRow}>
                     <div

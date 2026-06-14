@@ -273,3 +273,80 @@
     display: flex;
   }
 }
+
+/* Backend Selector styling */
+.backendSelectorContainer {
+  margin-bottom: 24px;
+  padding: 0 8px;
+  transition: all 0.3s ease;
+}
+
+.collapsed .backendSelectorContainer {
+  padding: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.selectorLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.collapsed .selectorLabel {
+  display: none;
+}
+
+.toggleWrapper {
+  display: flex;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  padding: 3px;
+  border-radius: 8px;
+  gap: 4px;
+}
+
+.collapsed .toggleWrapper {
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.togglePill {
+  flex: 1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.collapsed .togglePill {
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.togglePillActive {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+  color: var(--text-primary);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+}
+
+.togglePillActiveTalha {
+  background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
+  color: var(--text-primary);
+  box-shadow: 0 0 10px rgba(20, 184, 166, 0.3);
+}
+

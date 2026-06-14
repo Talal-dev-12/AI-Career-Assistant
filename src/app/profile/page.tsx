@@ -4,21 +4,17 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   UploadCloud,
   User,
-  Mail,
-  Phone,
   Briefcase,
-  MapPin,
   Sparkles,
   BookOpen,
   Plus,
   Trash2,
-  CheckCircle,
-  FileText,
   Clock,
   Save,
   Check,
 } from "lucide-react";
 import styles from "./Profile.module.css";
+import { useBackend } from "@/components/BackendContext";
 
 interface Experience {
   id: string;
@@ -28,16 +24,24 @@ interface Experience {
   desc: string;
 }
 
+interface TalhaExp {
+  id?: string;
+  title?: string;
+  company?: string;
+  start?: string;
+  end?: string;
+  highlights?: string | string[];
+}
+
 export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { apiUrl, userId } = useBackend();
 
   // States
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadLogs, setUploadLogs] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
-
-  const [hasProfile, setHasProfile] = useState(true); // Default profile loaded
 
   // Form Fields
   const [name, setName] = useState("John Doe");
@@ -83,6 +87,7 @@ export default function ProfilePage() {
   const [gradYear, setGradYear] = useState("2025");
 
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const hasProfile = true; // Fix undefined compile bug
 
   useEffect(() => {
     // Dynamic retrieval from onboarding fields in local storage
@@ -112,6 +117,44 @@ export default function ProfilePage() {
     if (storedCvName) setFileName(storedCvName);
   }, []);
 
+  // Sync profile details from unified backend
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!userId) return;
+      try {
+        const res = await fetch(`${apiUrl}/users/${userId}/profile`);
+        if (res.ok) {
+          const profile = await res.json();
+          if (profile.full_name) setName(profile.full_name);
+          if (profile.email) setEmail(profile.email);
+          if (profile.skills && profile.skills.length > 0) setSkills(profile.skills);
+          if (profile.experience && profile.experience.length > 0) {
+            setExperiences(
+              profile.experience.map((exp: TalhaExp, index: number) => ({
+                id: exp.id || `exp-${index}`,
+                role: exp.title || "",
+                company: exp.company || "",
+                duration: `${exp.start || ""} - ${exp.end || ""}`,
+                desc: Array.isArray(exp.highlights) ? exp.highlights.join(" ") : exp.highlights || "",
+              }))
+            );
+          }
+          if (profile.education && profile.education.length > 0) {
+            setEducation(profile.education[0].degree || "");
+            setInstitution(profile.education[0].institution || "");
+            setGradYear(profile.education[0].year || "");
+          }
+          if (profile.locations && profile.locations.length > 0) {
+            setLocation(profile.locations[0]);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch profile from unified backend:", err);
+      }
+    };
+    fetchProfile();
+  }, [userId, apiUrl]);
+
   // Handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -134,37 +177,67 @@ export default function ProfilePage() {
     fileInputRef.current?.click();
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     setFileName(file.name);
     setIsUploading(true);
     setUploadProgress(0);
-    setUploadLogs([]);
+    setUploadLogs(["[system] Initializing document analyzer..."]);
 
-    const steps = [
-      { progress: 15, log: "Initializing document analyzer..." },
-      { progress: 35, log: "Parsing PDF binary layout and structural mapping..." },
-      { progress: 55, log: "AI Model detecting sections (Experience, Skills, Education)..." },
-      { progress: 75, log: "Extracting work histories and company names..." },
-      { progress: 90, log: "Normalizing skills tags and matching with database standard..." },
-      { progress: 100, log: "Profile extraction completed successfully!" },
-    ];
+    const formData = new FormData();
+    formData.append("file", file);
 
-    steps.forEach((step, idx) => {
-      setTimeout(() => {
-        setUploadProgress(step.progress);
-        setUploadLogs((prev) => [...prev, `[system] ${step.log}`]);
-
-        if (step.progress === 100) {
+    try {
+      setUploadProgress(25);
+      setUploadLogs((prev) => [...prev, "[system] Parsing CV layout and scrubbing PII..."]);
+      
+      const res = await fetch(`${apiUrl}/users/${userId}/cv`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setUploadProgress(75);
+        setUploadLogs((prev) => [...prev, "[system] AI Agent extracting skills, experience, and education details..."]);
+        
+        setTimeout(() => {
+          setUploadProgress(100);
+          setUploadLogs((prev) => [...prev, "[system] Profile extraction completed successfully!"]);
+          
+          const profile = data.profile_data || {};
+          if (profile.full_name) setName(profile.full_name);
+          if (profile.email) setEmail(profile.email);
+          if (profile.skills) setSkills(profile.skills);
+          if (profile.experience && profile.experience.length > 0) {
+            const formattedExp = profile.experience.map((exp: TalhaExp, index: number) => ({
+              id: `exp-${index}`,
+              role: exp.title || "Software Engineer",
+              company: exp.company || "Company",
+              duration: `${exp.start || ""} - ${exp.end || ""}`,
+              desc: Array.isArray(exp.highlights) ? exp.highlights.join(" ") : exp.highlights || "",
+            }));
+            setExperiences(formattedExp);
+          }
+          if (profile.education && profile.education.length > 0) {
+            setEducation(profile.education[0].degree || "");
+            setInstitution(profile.education[0].institution || "");
+            setGradYear(profile.education[0].year || "");
+          }
+          
           setTimeout(() => {
             setIsUploading(false);
-            // Simulate filling extracted values (e.g. updating profile details slightly)
-            setName("John Doe (CV Analyzed)");
-            setSkills((prev) => Array.from(new Set([...prev, "Redux", "GraphQL"])));
-            setUploadLogs([]);
           }, 1000);
-        }
-      }, (idx + 1) * 800);
-    });
+        }, 1000);
+      } else {
+        throw new Error("Failed to parse CV from backend");
+      }
+    } catch (err) {
+      console.error(err);
+      setUploadLogs((prev) => [...prev, "[system] [ERROR] Failed to extract profile details from unified backend."]);
+      setTimeout(() => {
+        setIsUploading(false);
+      }, 3000);
+    }
   };
 
   const addSkill = (e: React.FormEvent) => {
@@ -183,7 +256,7 @@ export default function ProfilePage() {
     setExperiences(experiences.filter((exp) => exp.id !== id));
   };
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     // Save to local storage
     localStorage.setItem("userName", name);
     localStorage.setItem("userGoals", bio);
@@ -191,9 +264,51 @@ export default function ProfilePage() {
     localStorage.setItem("userInstitution", institution);
     localStorage.setItem("userCvName", fileName);
 
+    if (userId) {
+      try {
+        const expPayload = experiences.map((exp) => {
+          const parts = exp.duration.split("-");
+          return {
+            title: exp.role,
+            company: exp.company,
+            start: parts[0]?.trim() || "",
+            end: parts[1]?.trim() || "",
+            highlights: [exp.desc],
+          };
+        });
+
+        const eduPayload = [
+          {
+            degree: education,
+            institution: institution,
+            year: gradYear,
+          },
+        ];
+
+        await fetch(`${apiUrl}/users/${userId}/profile`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: userId,
+            full_name: name,
+            email: email,
+            skills: skills,
+            experience: expPayload,
+            education: eduPayload,
+            locations: [location],
+            target_roles: ["Senior React Developer", "Software Engineer - Frontend", "Frontend Engineer"],
+            profile_version: 1,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to save profile on unified backend:", err);
+      }
+    }
+
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3000);
   };
+
 
   return (
     <div className={styles.container}>
@@ -229,8 +344,20 @@ export default function ProfilePage() {
             <p className={styles.uploadDesc}>Supports PDF, DOCX, and TXT formats (Max 5MB)</p>
           </div>
           {fileName && (
-            <div style={{ fontSize: 13, color: "var(--secondary)", fontWeight: 600 }}>
-              Last Uploaded: {fileName}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+              <div style={{ fontSize: 13, color: "var(--secondary)", fontWeight: 600 }}>
+                Last Uploaded: {fileName}
+              </div>
+              <a 
+                href={`${apiUrl}/users/${userId}/cv/download`} 
+                target="_blank" 
+                rel="noreferrer"
+                className={styles.secondaryBtn}
+                style={{ padding: "4px 12px", fontSize: 12 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                Download Current CV
+              </a>
             </div>
           )}
         </div>

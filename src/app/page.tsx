@@ -10,11 +10,9 @@ import {
   TrendingUp,
   Brain,
   Zap,
-  CheckCircle2,
   ArrowRight,
   ArrowUpRight,
   ShieldCheck,
-  Code,
 } from "lucide-react";
 import styles from "./Dashboard.module.css";
 

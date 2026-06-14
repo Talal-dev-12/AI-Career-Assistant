@@ -19,7 +19,6 @@ import {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isClient, setIsClient] = useState(false);
   
   const pathname = usePathname();
@@ -33,7 +32,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const checkAuth = () => {
       const logged = localStorage.getItem("isLoggedIn") === "true";
-      setIsLoggedIn(logged);
 
       // Redirect if not logged in and not on the welcome page
       if (!logged && pathname !== "/welcome") {

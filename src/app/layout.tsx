@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AppLayout from "@/components/AppLayout";
+import { BackendProvider } from "@/components/BackendContext";
 
 export const metadata: Metadata = {
   title: "CareerFlow AI - Intelligent Career Assistant",
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppLayout>{children}</AppLayout>
+        <BackendProvider>
+          <AppLayout>{children}</AppLayout>
+        </BackendProvider>
       </body>
     </html>
   );

@@ -7,11 +7,9 @@ import {
   Lock,
   User,
   Sparkles,
-  ArrowRight,
   Briefcase,
   TrendingUp,
   Compass,
-  CheckCircle,
 } from "lucide-react";
 import styles from "./Welcome.module.css";
 
