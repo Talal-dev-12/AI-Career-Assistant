@@ -211,6 +211,31 @@ VALID_TRANSITIONS: dict[ApplicationStatus, set[ApplicationStatus]] = {
     ApplicationStatus.ACCEPTED: set(),
     ApplicationStatus.INTERVIEW: {ApplicationStatus.ACCEPTED, ApplicationStatus.REJECTED},
     ApplicationStatus.ASSET_ERROR: {ApplicationStatus.QUEUED},
+    
+    # Additional status transitions
+    ApplicationStatus.DRAFT: {
+        ApplicationStatus.AWAITING_USER_APPROVAL,
+        ApplicationStatus.QUEUED,
+        ApplicationStatus.FAILED,
+    },
+    ApplicationStatus.AWAITING_USER_APPROVAL: {
+        ApplicationStatus.APPROVED,
+        ApplicationStatus.REJECTED_BY_USER,
+    },
+    ApplicationStatus.APPROVED: {
+        ApplicationStatus.SUBMITTED,
+        ApplicationStatus.FAILED,
+        ApplicationStatus.QUEUED,
+    },
+    ApplicationStatus.SUBMITTED: {
+        ApplicationStatus.OFFER,
+        ApplicationStatus.REJECTED_BY_COMPANY,
+        ApplicationStatus.INTERVIEW,
+        ApplicationStatus.FAILED,
+    },
+    ApplicationStatus.REJECTED_BY_USER: set(),
+    ApplicationStatus.OFFER: set(),
+    ApplicationStatus.REJECTED_BY_COMPANY: set(),
 }
 
 

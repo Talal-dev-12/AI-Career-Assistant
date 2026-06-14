@@ -23,6 +23,8 @@ SKILL_VOCABULARY: dict[str, tuple[str, ...]] = {
     "javascript": ("javascript",),
     "typescript": ("typescript",),
     "react": ("react", "reactjs", "react.js"),
+    "next.js": ("next.js", "nextjs"),
+    "tailwind": ("tailwind", "tailwindcss", "tailwind css"),
     "vue": ("vue", "vuejs", "vue.js"),
     "node": ("node", "nodejs", "node.js"),
     "fastapi": ("fastapi",),

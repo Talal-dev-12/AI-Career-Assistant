@@ -1,0 +1,20 @@
+
+    Jane Doe
+    jane.doe@example.com
+    +1-555-0199
+    
+    Professional Experience:
+    Senior React Developer at Vercel (June 2024 - Present)
+    - Optimized next.js rendering pipelines, leading to 25% faster hydration.
+    - Led architectural design for React Server Components (RSC).
+    - Skilled in TypeScript, JavaScript, CSS, HTML5, and Git.
+    
+    Frontend Engineer at Stripe (Jan 2023 - May 2024)
+    - Maintained payment dashboards with React and Redux state management.
+    
+    Education:
+    Bachelor of Computer Science from DHA Suffa University (Class of 2025)
+    
+    Target Roles:
+    Senior React Developer, Frontend Engineer, Software Engineer
+    

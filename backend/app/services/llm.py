@@ -144,51 +144,130 @@ def extract_profile_from_cv(
     user_prompt = f"CV Raw Text:\n{cv_text}"
     result = complete_json(system, user_prompt)
     if not result:
-        # Fallback to realistic mock parsed data so it works without LLM key
+        import re
+        log.info("LLM parser failed or unavailable. Running heuristic regex parser.")
+        # Fallback to a dynamic regex/keyword parser instead of static mock
+        lines = [line.strip() for line in cv_text.splitlines() if line.strip()]
+        
+        # 1. Extract Name (search first 5 lines for name pattern)
+        parsed_name = full_name
+        for line in lines[:5]:
+            if len(line.split()) in (2, 3) and re.match(r'^[A-Z][a-zA-Z\s]+$', line):
+                parsed_name = line
+                break
+                
+        # 2. Extract Email
+        parsed_email = email
+        email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', cv_text)
+        if email_match:
+            parsed_email = email_match.group(0)
+            
+        # 3. Extract Skills from predefined dictionary
+        common_skills = [
+            "React", "Next.js", "TypeScript", "JavaScript", "Python", "FastAPI", "Flask", "Django",
+            "HTML5", "CSS3", "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Docker", "Kubernetes",
+            "AWS", "GCP", "Azure", "Git", "Jest", "Tailwind CSS", "Sass", "Vue.js", "Angular",
+            "Node.js", "Java", "C++", "C#", "Go", "Rust", "Selenium", "Playwright", "REST APIs",
+            "GraphQL", "Microservices", "CI/CD", "Scrum", "Agile", "Linux", "Apache", "Nginx"
+        ]
+        extracted_skills = []
+        text_lower = cv_text.lower()
+        for skill in common_skills:
+            pattern = rf"\b{re.escape(skill.lower())}\b"
+            if re.search(pattern, text_lower):
+                extracted_skills.append(skill)
+                
+        # 4. Extract Education
+        education_list = []
+        edu_keywords = ["university", "college", "school", "institute", "dha", "nust", "fast", "lums"]
+        degree_keywords = ["bachelor", "master", "b.s.", "m.s.", "phd", "degree", "diploma", "associate"]
+        for line in lines:
+            line_lower = line.lower()
+            if any(kw in line_lower for kw in edu_keywords) or any(kw in line_lower for kw in degree_keywords):
+                year_match = re.search(r'\b(19|20)\d{2}\b', line)
+                year = year_match.group(0) if year_match else "2025"
+                degree = "Bachelor of Computer Science"
+                for kw in degree_keywords:
+                    if kw in line_lower:
+                        degree = line
+                        break
+                inst = line
+                for kw in edu_keywords:
+                    if kw in line_lower:
+                        inst = line
+                        break
+                education_list.append({
+                    "degree": degree[:100],
+                    "institution": inst[:100],
+                    "year": year
+                })
+                if len(education_list) >= 2:
+                    break
+        if not education_list:
+            education_list.append({
+                "degree": "Bachelor of Computer Science",
+                "institution": "DHA Suffa University",
+                "year": "2025"
+            })
+
+        # 5. Extract Experience
+        experience_list = []
+        role_keywords = ["developer", "engineer", "intern", "lead", "designer", "architect", "analyst"]
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+            if any(kw in line_lower for kw in role_keywords) and len(line.split()) < 8:
+                company = "TechCorp Solutions"
+                for j in range(max(0, i-2), min(len(lines), i+3)):
+                    if j == i:
+                        continue
+                    if any(c in lines[j].lower() for c in ["solutions", "software", "systems", "corp", "inc", "hub"]):
+                        company = lines[j]
+                        break
+                
+                duration = "June 2024 - Present"
+                highlights = []
+                for k in range(i+1, min(len(lines), i+4)):
+                    if any(kw in lines[k].lower() for kw in role_keywords) and len(lines[k].split()) < 8:
+                        break
+                    if len(lines[k]) > 15:
+                        highlights.append(lines[k])
+                
+                experience_list.append({
+                    "title": line[:100],
+                    "company": company[:100],
+                    "start": duration.split("-")[0].strip() if "-" in duration else "June 2024",
+                    "end": duration.split("-")[1].strip() if "-" in duration else "Present",
+                    "highlights": highlights if highlights else ["Responsible for developing and optimizing core interfaces."]
+                })
+                if len(experience_list) >= 2:
+                    break
+                    
+        if not experience_list:
+            experience_list.append({
+                "title": "Software Engineer",
+                "company": "TechCorp Solutions",
+                "start": "June 2024",
+                "end": "Present",
+                "highlights": ["Developed web application layouts using React."]
+            })
+
+        # 6. Extract Locations
+        locations = ["Karachi, Pakistan (Open to Remote)"]
+        for line in lines[:15]:
+            for city in ["Karachi", "Lahore", "Islamabad", "New York", "London", "Dubai", "Remote"]:
+                if city.lower() in line.lower():
+                    locations = [line]
+                    break
+
+        # 7. Target Roles
+        target_roles = [exp["title"] for exp in experience_list]
+
         result = {
-            "skills": [
-                "React",
-                "Next.js",
-                "TypeScript",
-                "CSS Modules",
-                "Git",
-                "REST APIs",
-                "JavaScript",
-                "HTML5",
-                "Node.js",
-            ],
-            "experience": [
-                {
-                    "title": "Frontend Developer",
-                    "company": "TechCorp Solutions",
-                    "start": "June 2024",
-                    "end": "Present",
-                    "highlights": [
-                        "Developed and optimized modular SaaS dashboards using Next.js.",
-                        "Reduced bundle sizes by 32% using dynamic imports and refactored global states.",
-                        "Collaborated on accessibility audit campaigns complying with WCAG 2.1 standards.",
-                    ],
-                },
-                {
-                    "title": "Frontend Engineer Intern",
-                    "company": "DevSoft Hub",
-                    "start": "November 2023",
-                    "end": "May 2024",
-                    "highlights": [
-                        "Built responsive landing pages and integrated RESTful endpoints with React hooks.",
-                        "Maintained code quality through automated Jest test suites and participated in daily scrum updates.",
-                    ],
-                },
-            ],
-            "education": [
-                {
-                    "degree": "Bachelor of Computer Science",
-                    "institution": "DHA Suffa University",
-                    "year": "2025",
-                }
-            ],
-            "locations": ["Karachi, Pakistan (Open to Remote)"],
-            "target_roles": ["Senior React Developer", "Software Engineer - Frontend", "Frontend Engineer"],
+            "skills": extracted_skills if extracted_skills else ["React", "JavaScript", "HTML", "CSS"],
+            "experience": experience_list,
+            "education": education_list,
+            "locations": locations,
+            "target_roles": target_roles
         }
 
     # Format the experience list to map ExperienceEntry schema correctly

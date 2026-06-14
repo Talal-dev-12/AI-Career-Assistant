@@ -12,7 +12,7 @@ sqlalchemy>=2.0.31
 sqlmodel>=0.0.19
 alembic==1.13.2
 psycopg[binary]>=3.1
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.12
 aiosqlite>=0.20
 pymongo==4.8.0
 elasticsearch==8.14.0
@@ -54,10 +54,13 @@ requests==2.32.3
 httpx>=0.27.0
 
 # Monitoring & Observability
-ddtrace==2.9.2
+ddtrace==4.10.4
 opentelemetry-sdk==1.25.0
 opentelemetry-instrumentation-fastapi==0.46b0
 loguru==0.7.2
+structlog==24.4.0
+python-json-logger==3.2.1
+
 
 # Infrastructure
 kubernetes==30.1.0
