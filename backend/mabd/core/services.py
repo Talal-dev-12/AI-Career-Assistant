@@ -1,14 +1,11 @@
 import json
 import logging
 from typing import List, Dict, Any
-<<<<<<<< HEAD:backend/mabd/services/llm.py
-from mabd.services.config import settings
-========
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.http import Http404
 from .models import User, Job, UserSkill, SkillGapAnalysis, InterviewSession
->>>>>>>> origin/MABD:backend/mabd/core/services.py
+
 
 logger = logging.getLogger(__name__)
 
