@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Career Assistant — Job Intelligence Console</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Three.js via import map (needs internet on first load) -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark">◆</span>
+            <div>
+                <h1>AI Career Assistant</h1>
+                <span class="brand-sub">Job Scraping &amp; Verification Console</span>
+            </div>
+        </div>
+        <div class="status-chips">
+            <span class="chip"><span id="conn-dot" class="dot"></span> Live stream</span>
+            <span class="chip" id="engine-chip">Engine idle</span>
+        </div>
+    </header>
+
+    <!-- ===== HERO with interactive 3D globe ===== -->
+    <section class="hero">
+        <div id="globe-wrap">
+            <canvas id="globe-canvas"></canvas>
+            <div class="globe-hint">Drag to rotate · Scroll to zoom</div>
+            <div id="globe-fallback" class="globe-fallback hidden">3D view needs an internet connection to load Three.js.</div>
+        </div>
+        <div class="hero-overlay">
+            <h2>Global Job Intelligence</h2>
+            <p>Live scraping across Indeed &amp; LinkedIn, visualised in real time.</p>
+            <div class="stats">
+                <div class="stat"><span class="stat-num" id="stat-total">0</span><span class="stat-label">Jobs found</span></div>
+                <div class="stat"><span class="stat-num" id="stat-verified">0</span><span class="stat-label">Verified</span></div>
+                <div class="stat"><span class="stat-num" id="stat-sources">0</span><span class="stat-label">Sources</span></div>
+            </div>
+        </div>
+    </section>
+
+    <main class="layout">
+        <!-- Control Panel -->
+        <section class="panel control-panel">
+            <h2 class="panel-title">New Scrape</h2>
+            <form id="scrape-form">
+                <div class="form-group">
+                    <label for="keyword">Keyword</label>
+                    <input type="text" id="keyword" required placeholder="e.g. Python Developer">
+                </div>
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" placeholder="e.g. Lahore">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="job-type">Job Type</label>
+                        <select id="job-type">
+                            <option value="">Any</option>
+                            <option value="full-time">Full-time</option>
+                            <option value="part-time">Part-time</option>
+                            <option value="contract">Contract</option>
+                            <option value="internship">Internship</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="experience-level">Experience</label>
+                        <select id="experience-level">
+                            <option value="">Any</option>
+                            <option value="entry">Entry</option>
+                            <option value="mid">Mid</option>
+                            <option value="senior">Senior</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Platforms</label>
+                        <div class="checkbox-group">
+                            <label class="toggle"><input type="checkbox" id="plat-indeed" checked> Indeed</label>
+                            <label class="toggle"><input type="checkbox" id="plat-linkedin" checked> LinkedIn</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="max-pages">Max Pages</label>
+                        <input type="number" id="max-pages" value="1" min="1" max="10">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" id="btn-scrape" class="btn btn-primary">▶ Start Scrape</button>
+                    <button type="button" id="btn-cancel-scrape" class="btn btn-danger" style="display:none;">■ Stop</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Results -->
+        <section class="panel results-panel">
+            <div class="results-header">
+                <h2 class="panel-title">Scraped Jobs <span class="count-pill" id="job-count">0</span></h2>
+                <button id="btn-verify" class="btn btn-ghost" disabled>✓ Verify Jobs</button>
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p id="loading-text">Processing…</p>
+            </div>
+
+            <div class="jobs-grid" id="jobs-container">
+                <div class="empty-state">No jobs scraped yet. Fill out the form to start.</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Live Log Panel -->
+    <section id="log-panel">
+        <div class="log-header">
+            <h3>Live Logs <span id="log-status" class="log-status" title="connecting…">●</span></h3>
+            <div class="log-controls">
+                <select id="log-level-filter">
+                    <option value="ALL">All</option>
+                    <option value="INFO">Info+</option>
+                    <option value="WARNING">Warnings+</option>
+                    <option value="ERROR">Errors only</option>
+                </select>
+                <label class="toggle"><input type="checkbox" id="log-autoscroll" checked> Auto-scroll</label>
+                <button id="log-clear" type="button">Clear</button>
+            </div>
+        </div>
+        <pre id="log-output" class="log-output"></pre>
+    </section>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
