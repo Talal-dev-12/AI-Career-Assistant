@@ -259,7 +259,7 @@ $('scrape-form').addEventListener('submit', async (e) => {
   setLoading(true, 'Scraping from ' + platforms.join(', ') + '…');
   setEngine('Scraping…', true);
   try {
-    const res = await fetch('/api/scrape', {
+    const res = await fetch(API_BASE + '/api/scrape', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keyword, location, job_type, experience_level, platforms, max_pages }),
     });
@@ -279,7 +279,7 @@ $('scrape-form').addEventListener('submit', async (e) => {
 
 $('btn-cancel-scrape').addEventListener('click', async () => {
   try {
-    const res = await fetch('/api/scrape/cancel', { method: 'POST' });
+    const res = await fetch(API_BASE + '/api/scrape/cancel', { method: 'POST' });
     if (!res.ok) throw new Error('Failed to cancel scrape.');
     setLoading(true, 'Cancelling…');
   } catch (err) { alert(err.message); }
@@ -291,7 +291,7 @@ $('btn-verify').addEventListener('click', async () => {
   setEngine('Verifying…', true);
   $('btn-verify').disabled = true;
   try {
-    const res = await fetch('/api/verify', {
+    const res = await fetch(API_BASE + '/api/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobs: currentJobs }),
     });
@@ -392,7 +392,7 @@ function attachTilt() {
 /* =========================================================
    3) Live log viewer (SSE)
    ========================================================= */
-const API_BASE = '';
+const API_BASE = 'https://YOUR-APP.up.railway.app'; // Replace with your Railway URL in production
 const logOut = $('log-output');
 const logStatus = $('log-status');
 const connDot = $('conn-dot');
