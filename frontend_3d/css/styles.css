@@ -21,7 +21,7 @@ body {
   background: radial-gradient(1200px 700px at 70% -10%, #0d1a33 0%, var(--bg) 60%);
   color: var(--text);
   min-height: 100vh;
-  padding-bottom: 240px;
+  padding-bottom: 40px;
 }
 
 .bg-grid {
@@ -168,9 +168,11 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px r
 
 /* ===== Log panel ===== */
 #log-panel {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; height: 220px;
-  background: rgba(6,9,16,.92); border-top: 1px solid var(--panel-border);
-  backdrop-filter: blur(12px); display: flex; flex-direction: column;
+  grid-column: 1 / -1; height: 260px;
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: var(--radius); backdrop-filter: blur(14px);
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 50px rgba(0,0,0,.35);
 }
 .log-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid var(--panel-border); }
 .log-header h3 { font-size: 13px; margin: 0; display: flex; align-items: center; gap: 8px; }

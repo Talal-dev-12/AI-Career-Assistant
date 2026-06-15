@@ -122,25 +122,25 @@
                 <div class="empty-state">No jobs scraped yet. Fill out the form to start.</div>
             </div>
         </section>
-    </main>
 
-    <!-- Live Log Panel -->
-    <section id="log-panel">
-        <div class="log-header">
-            <h3>Live Logs <span id="log-status" class="log-status" title="connecting…">●</span></h3>
-            <div class="log-controls">
-                <select id="log-level-filter">
-                    <option value="ALL">All</option>
-                    <option value="INFO">Info+</option>
-                    <option value="WARNING">Warnings+</option>
-                    <option value="ERROR">Errors only</option>
-                </select>
-                <label class="toggle"><input type="checkbox" id="log-autoscroll" checked> Auto-scroll</label>
-                <button id="log-clear" type="button">Clear</button>
+        <!-- Live Log Panel -->
+        <section id="log-panel">
+            <div class="log-header">
+                <h3>Live Logs <span id="log-status" class="log-status" title="connecting…">●</span></h3>
+                <div class="log-controls">
+                    <select id="log-level-filter">
+                        <option value="ALL">All</option>
+                        <option value="INFO">Info+</option>
+                        <option value="WARNING">Warnings+</option>
+                        <option value="ERROR">Errors only</option>
+                    </select>
+                    <label class="toggle"><input type="checkbox" id="log-autoscroll" checked> Auto-scroll</label>
+                    <button id="log-clear" type="button">Clear</button>
+                </div>
             </div>
-        </div>
-        <pre id="log-output" class="log-output"></pre>
-    </section>
+            <pre id="log-output" class="log-output"></pre>
+        </section>
+    </main>
 
     <script type="module" src="js/app.js"></script>
 </body>
