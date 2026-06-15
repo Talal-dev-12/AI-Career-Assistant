@@ -1,33 +1,23 @@
+# Railway backend: FastAPI + crawl4ai (Playwright / Chromium)
 FROM python:3.12-slim
 
-# Install system dependencies needed for installing packages and headless browsers
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements
+# 1) Python deps first (better layer caching)
 COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# 2) Chromium + all system libs Playwright needs
+RUN python -m playwright install --with-deps chromium
 
-# Run crawl4ai-setup to configure crawl4ai and install playwright browsers with system dependencies
-RUN crawl4ai-setup && playwright install --with-deps chromium
-
-# Create directories for database and logging
-RUN mkdir -p data logs
-
-# Copy the rest of the application files
+# 3) App code
 COPY . .
 
-# Expose port (Railway will override this automatically)
-EXPOSE 8000
-
-# Set environment variables to run Python in unbuffered mode
-ENV PYTHONUNBUFFERED=1
-
-# Start FastAPI server
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Railway injects $PORT at runtime
+ENV PORT=8000
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT}"]
