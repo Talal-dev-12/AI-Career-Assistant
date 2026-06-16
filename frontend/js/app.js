@@ -157,7 +157,7 @@ function escapeHTML(str) {
 }
 
 // ---- Live log viewer ----
-const API_BASE = 'https://YOUR-APP.up.railway.app';
+const API_BASE = 'https://ai-assisstant-production.up.railway.app';
 
 const logOut       = document.getElementById("log-output");
 const logStatus    = document.getElementById("log-status");
