@@ -36,5 +36,4 @@ Thumbs.db
 .idea/
 
 # Exclude frontend and scratch as requested
-frontend/
 scratch/
