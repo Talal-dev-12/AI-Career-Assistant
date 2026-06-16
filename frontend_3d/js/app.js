@@ -392,7 +392,7 @@ function attachTilt() {
 /* =========================================================
    3) Live log viewer (SSE)
    ========================================================= */
-const API_BASE = 'https://YOUR-APP.up.railway.app'; // Replace with your Railway URL in production
+const API_BASE = 'https://ai-assisstant-production.up.railway.app';
 const logOut = $('log-output');
 const logStatus = $('log-status');
 const connDot = $('conn-dot');
